@@ -1,0 +1,77 @@
+{
+  "name": "B2B Aggregator - Daily Seller Executive WhatsApp Digest",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 20 * * *"
+            }
+          ]
+        }
+      },
+      "name": "Every Day at 8 PM IST",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://api:4000/api/analytics/seller-performance?organizationId=org_anagata_fmcg",
+        "options": {}
+      },
+      "name": "Fetch Seller Performance SLA",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evo.anagataitsolutions.in/message/sendText/b2b_alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "anagata_evolution_key"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"number\": \"919888888888\",\n  \"text\": \"📊 *Daily Sales & Delivery Performance Digest*\\n\\n*Brand:* \" + $json.organizationName + \"\\n*Fixed Subscription:* ₹\" + $json.monthlySubscriptionFee + \"/mo (0% Commission)\\n*Total Orders Booked:* \" + $json.ordersBooked + \"\\n*Beat Strike Rate:* \" + $json.strikeRatePct + \"%\\n*Avg Delivery Duration:* \" + $json.avgDeliveryTransitMinutes + \" minutes\\n*On-Time Delivery SLA:* \" + $json.onTimeDeliverySlaPct + \"%\\n\\n_Verified by Hyperlocal Field Force & Evolution API_\"\n}"
+      },
+      "name": "Send WhatsApp via Evolution API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Every Day at 8 PM IST": {
+      "main": [
+        [
+          {
+            "node": "Fetch Seller Performance SLA",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Seller Performance SLA": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp via Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

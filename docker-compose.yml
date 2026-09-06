@@ -1,0 +1,62 @@
+version: "3.8"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: b2b_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-b2b_secret_pass_2026}
+      POSTGRES_DB: ${DB_NAME:-b2b_aggregator}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: b2b_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PORT: 4000
+      NODE_ENV: production
+      DATABASE_URL: postgresql://${DB_USER:-postgres}:${DB_PASSWORD:-b2b_secret_pass_2026}@postgres:5432/${DB_NAME:-b2b_aggregator}?schema=public
+      JWT_SECRET: ${JWT_SECRET:-super_secret_jwt_aggregator_key_2026}
+      EVOLUTION_API_URL: ${EVOLUTION_API_URL:-https://evo.anagataitsolutions.in}
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-IefwSiekrTOn92twVtnlLcl3WEKiC8pz}
+      EVOLUTION_INSTANCE_NAME: ${EVOLUTION_INSTANCE_NAME:-n8n}
+      N8N_WEBHOOK_URL: ${N8N_WEBHOOK_URL:-https://n8n.anagataitsolutions.in/webhook/b2b-events}
+    ports:
+      - "4000:4000"
+
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api-b2b.anagataitsolutions.in}
+    container_name: b2b_web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      PORT: 3000
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-https://api-b2b.anagataitsolutions.in}
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:

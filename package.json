@@ -1,0 +1,21 @@
+{
+  "name": "b2b-sales-aggregator-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Production-grade Hyperlocal B2B Sales Aggregator Platform for Manufacturers, Wholesalers, Field Agents & Retailers",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "start:api": "node apps/api/dist/server.js",
+    "dev:api": "node --watch apps/api/src/server.ts",
+    "start:web": "npm --prefix apps/web start",
+    "dev:web": "npm --prefix apps/web run dev"
+  },
+  "devDependencies": {
+    "pg": "^8.23.0"
+  }
+}

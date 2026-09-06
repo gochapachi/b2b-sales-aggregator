@@ -1,0 +1,56 @@
+{
+  "name": "B2B Aggregator - 7-Day Retailer Reorder Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 10 * * 1-6"
+            }
+          ]
+        }
+      },
+      "name": "Every Morning at 10 AM Mon-Sat",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://evo.anagataitsolutions.in/message/sendText/b2b_alerts",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "anagata_evolution_key"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"number\": \"919555555555\",\n  \"text\": \"🛒 *Stock Replenishment Reminder!*\\n\\nHello Ramesh ji (Gupta Kirana Store),\\nYour weekly Monday beat agent *Rahul Sharma* is in your area today.\\n\\nPopular SKUs low on stock in Hazratganj:\\n• Parle-G Glucose (72 pkts carton)\\n• Limca 750ml (24 btls crate)\\n\\nReply *YES* to reorder with 1 click or place order directly when Rahul visits your shop!\"\n}"
+      },
+      "name": "Send Nudge via Evolution API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [500, 300]
+    }
+  ],
+  "connections": {
+    "Every Morning at 10 AM Mon-Sat": {
+      "main": [
+        [
+          {
+            "node": "Send Nudge via Evolution API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

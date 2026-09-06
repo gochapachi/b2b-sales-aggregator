@@ -1,0 +1,13 @@
+﻿node_modules/
+.next/
+dist/
+.agents/
+apps/mobile/android/.gradle/
+apps/mobile/android/app/build/
+apps/mobile/.expo/
+.env.local
+.env
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log

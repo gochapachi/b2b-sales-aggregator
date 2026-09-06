@@ -1,0 +1,24 @@
+{
+  "expo": {
+    "name": "B2B Sales Aggregator",
+    "slug": "b2b-sales-aggregator",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#1e1b4b"
+    },
+    "android": {
+      "package": "com.anagata.b2baggregator",
+      "adaptiveIcon": {
+        "backgroundColor": "#1e1b4b"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA"
+      ]
+    }
+  }
+}
