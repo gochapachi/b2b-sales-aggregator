@@ -17,16 +17,24 @@ import {
   ChevronRight,
   Sparkles,
   Phone,
-  PackageCheck
+  PackageCheck,
+  Tag,
+  Percent,
+  Receipt,
+  Eye,
+  Filter
 } from "lucide-react";
 import SavingsCalculator from "../components/roi/SavingsCalculator";
 import KycVerificationModal from "../components/kyc/KycVerificationModal";
 import DeliveryOtpModal from "../components/orders/DeliveryOtpModal";
+import GstInvoiceModal from "../components/orders/GstInvoiceModal";
+import B2bCheckoutModal from "../components/orders/B2bCheckoutModal";
+import AgentCrmDashboard from "../components/crm/AgentCrmDashboard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
 export default function Home() {
-  const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("SELLER");
+  const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("RETAILER");
   const [loading, setLoading] = useState(false);
 
   // Seller Data
@@ -39,16 +47,29 @@ export default function Home() {
   const [selectedKycRetailer, setSelectedKycRetailer] = useState<any | null>(null);
   const [isKycModalOpen, setIsKycModalOpen] = useState(false);
 
-  // Retailer Data
+  // Retailer Udaan Marketplace Data
   const [catalog, setCatalog] = useState<any[]>([]);
+  const [brands, setBrands] = useState<any[]>([]);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [selectedBrand, setSelectedBrand] = useState<string>("ALL");
+  const [selectedCategory, setSelectedCategory] = useState<string>("ALL");
   const [isPriceUnlocked, setIsPriceUnlocked] = useState(true);
   const [cart, setCart] = useState<{ [skuId: string]: number }>({});
   const [retailerOrders, setRetailerOrders] = useState<any[]>([]);
+  const [retailerProfile, setRetailerProfile] = useState<any | null>({
+    id: "ret_gupta_kirana",
+    shopName: "Gupta Kirana & General Store",
+    ownerName: "Ramesh Gupta",
+    phone: "9555555555",
+    creditLimit: 50000,
+    creditDues: 14200,
+    paymentTerm: "NET_7",
+    kycStatus: "VERIFIED"
+  });
   const [orderStatusNotice, setOrderStatusNotice] = useState("");
-
-  // Agent Data
-  const [todayBeat, setTodayBeat] = useState<any | null>(null);
-  const [checkinMessage, setCheckinMessage] = useState("");
+  const [isCheckoutModalOpen, setIsCheckoutModalOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
 
   // Load data on tab switch
   const loadData = async () => {
@@ -61,17 +82,33 @@ export default function Home() {
         const res = await fetch(`${API_BASE}/api/kyc/pending`).then(r => r.json());
         setPendingRetailers(res.pendingRetailers || []);
       } else if (activeRole === "RETAILER") {
-        const cat = await fetch(`${API_BASE}/api/catalog?role=RETAILER&retailerId=ret_gupta_kirana`).then(r => r.json());
+        // Fetch brands
+        const bRes = await fetch(`${API_BASE}/api/catalog/brands`).then(r => r.json());
+        setBrands(bRes.brands || []);
+
+        // Fetch categories
+        const cRes = await fetch(`${API_BASE}/api/catalog/categories`).then(r => r.json());
+        setCategories(cRes.categories || []);
+
+        // Fetch catalog with filters
+        let url = `${API_BASE}/api/catalog?role=RETAILER&retailerId=ret_gupta_kirana`;
+        if (selectedBrand !== "ALL") url += `&brand=${encodeURIComponent(selectedBrand)}`;
+        if (selectedCategory !== "ALL") url += `&category=${encodeURIComponent(selectedCategory)}`;
+
+        const cat = await fetch(url).then(r => r.json());
         setCatalog(cat.products || []);
         setIsPriceUnlocked(cat.isPriceUnlocked);
+
+        // Fetch retailer orders
         const ords = await fetch(`${API_BASE}/api/orders?role=RETAILER&retailerId=ret_gupta_kirana`).then(r => r.json());
         setRetailerOrders(ords.orders || []);
-      } else if (activeRole === "AGENT") {
-        const beat = await fetch(`${API_BASE}/api/beats/today?agentId=usr_agent_1`).then(r => r.json());
-        setTodayBeat(beat);
+
+        // Fetch retailer profile
+        const prof = await fetch(`${API_BASE}/api/crm/retailer/ret_gupta_kirana`).then(r => r.json());
+        if (prof.retailer) setRetailerProfile(prof.retailer);
       }
     } catch (e) {
-      console.error(e);
+      console.error("Failed to load page data:", e);
     } finally {
       setLoading(false);
     }
@@ -79,7 +116,7 @@ export default function Home() {
 
   useEffect(() => {
     loadData();
-  }, [activeRole]);
+  }, [activeRole, selectedBrand, selectedCategory]);
 
   // Seller dispatch
   const handleDispatch = async (subOrderId: string) => {
@@ -98,6 +135,7 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ subOrderId, enteredOtp, deliveryBoyName })
     }).then(r => r.json());
+
     if (res.error) throw new Error(res.message || res.error);
     await loadData();
     return { success: true, transitDurationMinutes: res.subOrder?.transitDurationMinutes };
@@ -122,8 +160,8 @@ export default function Home() {
     await loadData();
   };
 
-  // Retailer checkout
-  const handleCheckout = async () => {
+  // Retailer checkout with selected payment term
+  const handleConfirmOrder = async (paymentTerm: string) => {
     const items = Object.entries(cart)
       .filter(([_, qty]) => qty > 0)
       .map(([skuId, qty]) => ({ productSkuId: skuId, quantity: qty }));
@@ -135,44 +173,40 @@ export default function Home() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         retailerId: "ret_gupta_kirana",
+        placedByAgentId: "usr_agent_1",
+        paymentTerm,
         items
       })
     }).then(r => r.json());
 
     if (res.error) {
-      alert(res.error);
-      return;
+      throw new Error(res.error);
     }
 
     setCart({});
-    setOrderStatusNotice(`🎉 Order #${res.order.orderNumber} placed! Split into ${res.order.subOrders.length} vendor sub-orders. Itemized bill dispatched to your WhatsApp!`);
+    setOrderStatusNotice(
+      `🎉 Order #${res.order.orderNumber} placed successfully under ${paymentTerm}! Sub-orders routed with volume discounts. Bill sent to your WhatsApp.`
+    );
     await loadData();
   };
 
-  // Agent Checkin
-  const handleAgentCheckin = async (retailerId: string) => {
-    const res = await fetch(`${API_BASE}/api/visits/checkin`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agentId: "usr_agent_1",
-        retailerId,
-        beatId: todayBeat?.beatId,
-        latitude: 26.8469,
-        longitude: 80.9462
-      })
-    }).then(r => r.json());
-
-    if (res.success) {
-      setCheckinMessage(res.message);
-      await loadData();
-    } else {
-      alert(res.message || res.error);
+  // View GST Invoice
+  const handleViewInvoice = async (subOrderId: string) => {
+    try {
+      const res = await fetch(`${API_BASE}/api/orders/invoice/${subOrderId}`).then(r => r.json());
+      if (res.invoice) {
+        setSelectedInvoice(res.invoice);
+        setIsInvoiceModalOpen(true);
+      } else {
+        alert("Invoice not available for this sub-order yet.");
+      }
+    } catch (e: any) {
+      alert("Failed to load invoice: " + e.message);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col">
+    <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
       {/* Top Header */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -181,8 +215,11 @@ export default function Home() {
               B
             </div>
             <div>
-              <h1 className="text-base font-bold leading-tight">
+              <h1 className="text-base font-bold leading-tight flex items-center gap-2">
                 Hyperlocal B2B Sales Aggregator
+                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                  Udaan B2B + SFA CRM
+                </span>
               </h1>
               <div className="text-xs text-slate-400 flex items-center gap-2">
                 <span>Coolify Ubuntu 24.04</span>
@@ -194,6 +231,28 @@ export default function Home() {
 
           {/* Role Switcher */}
           <div className="bg-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-semibold">
+            <button
+              onClick={() => setActiveRole("RETAILER")}
+              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                activeRole === "RETAILER"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" />
+              Udaan B2B Store
+            </button>
+            <button
+              onClick={() => setActiveRole("AGENT")}
+              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                activeRole === "AGENT"
+                  ? "bg-indigo-600 text-white shadow-sm"
+                  : "text-slate-300 hover:text-white"
+              }`}
+            >
+              <MapPin className="w-3.5 h-3.5" />
+              Field Agent CRM
+            </button>
             <button
               onClick={() => setActiveRole("SELLER")}
               className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
@@ -214,29 +273,7 @@ export default function Home() {
               }`}
             >
               <Shield className="w-3.5 h-3.5" />
-              Super Admin
-            </button>
-            <button
-              onClick={() => setActiveRole("RETAILER")}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeRole === "RETAILER"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white"
-              }`}
-            >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              Retailer Web
-            </button>
-            <button
-              onClick={() => setActiveRole("AGENT")}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeRole === "AGENT"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white"
-              }`}
-            >
-              <MapPin className="w-3.5 h-3.5" />
-              Sales Agent
+              Super Admin KYC
             </button>
           </div>
         </div>
@@ -244,127 +281,422 @@ export default function Home() {
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        {/* ================= SELLER / WHOLESALER VIEW ================= */}
+        {/* ================= 1. RETAILER UDAAN B2B STORE VIEW ================= */}
+        {activeRole === "RETAILER" && (
+          <div className="space-y-6">
+            {/* Status notice */}
+            {orderStatusNotice && (
+              <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between">
+                <span>{orderStatusNotice}</span>
+                <button onClick={() => setOrderStatusNotice("")} className="text-emerald-900 font-bold">✕</button>
+              </div>
+            )}
+
+            {/* Price-gated notification */}
+            {!isPriceUnlocked && (
+              <div className="p-4 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-600" />
+                <span>
+                  Wholesale prices are hidden. Your KYC status is Pending. Once verified by Admin or your Field Sales Agent, wholesale rates will unlock automatically.
+                </span>
+              </div>
+            )}
+
+            {/* Kirana Credit & Profile Status Bar */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center font-bold text-indigo-700">
+                  GK
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 text-sm">{retailerProfile?.shopName}</span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">
+                      GST Verified
+                    </span>
+                  </div>
+                  <div className="text-xs text-slate-500">
+                    Proprietor: {retailerProfile?.ownerName} • Phone: {retailerProfile?.phone}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 text-xs">
+                <div>
+                  <div className="text-slate-500 font-medium">B2B Credit Line</div>
+                  <div className="font-black text-slate-900 text-sm">
+                    ₹{(retailerProfile?.creditLimit - retailerProfile?.creditDues || 35800).toLocaleString("en-IN")}{" "}
+                    <span className="text-slate-400 font-normal text-xs">/ ₹{retailerProfile?.creditLimit?.toLocaleString("en-IN")}</span>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-slate-500 font-medium">Payment Term</div>
+                  <div className="font-bold text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg">
+                    {retailerProfile?.paymentTerm || "Net-7"}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Brand Store Discovery Row */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-indigo-600" />
+                  Official FMCG Brand Stores
+                </h3>
+                {selectedBrand !== "ALL" && (
+                  <button
+                    onClick={() => setSelectedBrand("ALL")}
+                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                  >
+                    Clear Filter
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                {brands.map((b) => (
+                  <button
+                    key={b.brand}
+                    onClick={() => setSelectedBrand(selectedBrand === b.brand ? "ALL" : b.brand)}
+                    className={`p-3 rounded-xl border text-center transition flex flex-col items-center justify-between ${
+                      selectedBrand === b.brand
+                        ? "bg-indigo-50 border-indigo-600 shadow-sm"
+                        : "bg-white border-slate-200 hover:border-slate-300"
+                    }`}
+                  >
+                    <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center font-black text-indigo-700 text-sm mb-1">
+                      {b.brand.slice(0, 2).toUpperCase()}
+                    </div>
+                    <div className="font-bold text-slate-900 text-xs leading-tight">{b.brand}</div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">{b.productsCount} SKUs</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="flex flex-wrap gap-2 text-xs font-semibold">
+              <button
+                onClick={() => setSelectedCategory("ALL")}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  selectedCategory === "ALL"
+                    ? "bg-slate-900 text-white"
+                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                All Categories
+              </button>
+              {categories.map((c) => (
+                <button
+                  key={c.name}
+                  onClick={() => setSelectedCategory(selectedCategory === c.name ? "ALL" : c.name)}
+                  className={`px-3 py-1.5 rounded-lg transition ${
+                    selectedCategory === c.name
+                      ? "bg-slate-900 text-white"
+                      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {c.name} ({c.count})
+                </button>
+              ))}
+            </div>
+
+            {/* Wholesale Products & Cart */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Product Catalog Cards */}
+              <div className="lg:col-span-2 space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {catalog.map((prod) => (
+                    <div
+                      key={prod.id}
+                      className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between hover:shadow-md transition"
+                    >
+                      <div className="p-4 space-y-3">
+                        <div className="flex justify-between items-start">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                            {prod.brand}
+                          </span>
+                          {prod.marginPct > 0 && (
+                            <span className="bg-emerald-100 text-emerald-800 text-[10px] font-black px-2 py-0.5 rounded-full flex items-center gap-0.5">
+                              <Percent className="w-3 h-3" />
+                              {prod.marginPct}% Margin
+                            </span>
+                          )}
+                        </div>
+
+                        <div>
+                          <h4 className="font-bold text-slate-900 text-sm leading-snug">{prod.name}</h4>
+                          <div className="text-[11px] text-slate-500 mt-0.5">
+                            Seller: {prod.organizationName} • MOV: ₹{prod.minimumOrderValue}
+                          </div>
+                        </div>
+
+                        {prod.skus.map((sku: any) => {
+                          const currentQty = cart[sku.id] || 0;
+                          return (
+                            <div key={sku.id} className="pt-3 border-t border-slate-100 space-y-2">
+                              <div className="flex justify-between items-start">
+                                <div>
+                                  <div className="text-xs font-semibold text-slate-800">{sku.unitTitle}</div>
+                                  <div className="text-[11px] text-slate-400">MOQ: {sku.minimumOrderQuantity} units</div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-sm font-black text-slate-900">
+                                    ₹{sku.wholesalePrice}
+                                    <span className="text-xs text-slate-400 line-through ml-1 font-normal">
+                                      ₹{sku.mrp}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* Volume Pricing Slab Pills */}
+                              {sku.pricingSlabs && sku.pricingSlabs.length > 0 && (
+                                <div className="space-y-1 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                  <div className="text-[10px] font-bold text-slate-500 uppercase">Volume Tier Slabs:</div>
+                                  <div className="space-y-1">
+                                    {sku.pricingSlabs.map((slab: any, sIdx: number) => {
+                                      const isTargetSlab =
+                                        currentQty >= slab.minQuantity &&
+                                        (!slab.maxQuantity || currentQty <= slab.maxQuantity);
+                                      return (
+                                        <div
+                                          key={sIdx}
+                                          className={`text-[10px] px-2 py-1 rounded flex justify-between items-center ${
+                                            isTargetSlab
+                                              ? "bg-emerald-600 text-white font-bold shadow-sm"
+                                              : "text-slate-600 bg-white border border-slate-200"
+                                          }`}
+                                        >
+                                          <span>{slab.label}</span>
+                                          <span className="font-mono">₹{slab.pricePerUnit}</span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Quantity Stepper */}
+                              <div className="flex items-center justify-between pt-1">
+                                <span className="text-xs text-slate-500">Order Quantity:</span>
+                                <div className="flex items-center gap-2">
+                                  <button
+                                    onClick={() =>
+                                      setCart((prev) => ({
+                                        ...prev,
+                                        [sku.id]: Math.max(0, (prev[sku.id] || 0) - 1)
+                                      }))
+                                    }
+                                    className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded-lg font-bold text-xs flex items-center justify-center transition"
+                                  >
+                                    -
+                                  </button>
+                                  <span className="text-xs font-bold w-6 text-center">{currentQty}</span>
+                                  <button
+                                    onClick={() =>
+                                      setCart((prev) => ({
+                                        ...prev,
+                                        [sku.id]: (prev[sku.id] || 0) + 1
+                                      }))
+                                    }
+                                    className="w-7 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs flex items-center justify-center transition shadow-sm"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shopping Cart & Delivery OTP Tracker */}
+              <div className="space-y-6">
+                {/* Cart Summary */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-bold text-slate-900 text-base">Master Shopping Cart</h4>
+                    <span className="text-xs text-indigo-600 font-bold">
+                      {Object.values(cart).reduce((a, b) => a + b, 0)} Items
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 text-xs max-h-56 overflow-y-auto">
+                    {Object.entries(cart).filter(([_, q]) => q > 0).length === 0 ? (
+                      <div className="py-6 text-center text-slate-400">Cart is empty. Select items to order.</div>
+                    ) : (
+                      Object.entries(cart)
+                        .filter(([_, q]) => q > 0)
+                        .map(([skuId, qty]) => (
+                          <div key={skuId} className="py-2 flex justify-between items-center">
+                            <span className="font-medium text-slate-700">SKU {skuId.slice(0, 16)}... (x{qty})</span>
+                            <span className="font-bold text-slate-900">Added</span>
+                          </div>
+                        ))
+                    )}
+                  </div>
+
+                  <button
+                    onClick={() => setIsCheckoutModalOpen(true)}
+                    disabled={Object.values(cart).every((v) => v === 0)}
+                    className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2"
+                  >
+                    <Truck className="w-4 h-4" />
+                    Review B2B Terms & Checkout
+                  </button>
+                </div>
+
+                {/* Active Orders & 4-Digit OTP Hand-Off */}
+                <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
+                  <div className="flex justify-between items-center">
+                    <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                      <KeyRound className="w-4 h-4 text-indigo-600" />
+                      Live Orders & Delivery OTPs
+                    </h4>
+                    <button onClick={loadData} className="text-slate-400 hover:text-slate-700 p-1">
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  {retailerOrders.length === 0 ? (
+                    <div className="text-xs text-slate-400 py-3 text-center">No orders placed yet</div>
+                  ) : (
+                    retailerOrders.slice(0, 3).map((mo) => (
+                      <div key={mo.id} className="space-y-2 pt-3 border-t border-slate-100">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="font-bold text-slate-800">#{mo.orderNumber}</span>
+                          <span className="text-indigo-600 font-black">₹{mo.totalAmount?.toLocaleString("en-IN")}</span>
+                        </div>
+
+                        {mo.subOrders?.map((so: any) => (
+                          <div key={so.id} className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs space-y-2">
+                            <div className="flex justify-between font-bold text-slate-900">
+                              <span>{so.organizationName}</span>
+                              <span className="text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded text-[10px]">
+                                {so.status}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <span className="text-slate-500 font-medium">Delivery OTP:</span>
+                              <span className="font-mono text-sm font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded">
+                                {so.deliveryOtp}
+                              </span>
+                            </div>
+
+                            {/* View GST Tax Invoice button */}
+                            <button
+                              onClick={() => handleViewInvoice(so.id)}
+                              className="w-full py-1.5 bg-white border border-indigo-200 hover:bg-indigo-50 text-indigo-700 font-bold text-[11px] rounded-lg transition flex items-center justify-center gap-1 mt-1"
+                            >
+                              <Receipt className="w-3.5 h-3.5" />
+                              View & Print GST Tax Invoice
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* ================= 2. FIELD SALES AGENT SFA CRM VIEW ================= */}
+        {activeRole === "AGENT" && (
+          <AgentCrmDashboard apiBase={API_BASE} agentId="usr_agent_1" />
+        )}
+
+        {/* ================= 3. WHOLESALER / BRAND VIEW ================= */}
         {activeRole === "SELLER" && (
           <div className="space-y-8">
-            {/* Quick Metrics Bar */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Monthly Subscription</div>
-                <div className="text-2xl font-black text-indigo-900 mt-1">₹6,000 <span className="text-xs font-normal text-slate-500">/mo</span></div>
-                <div className="text-xs text-emerald-600 font-bold mt-1">✓ 0% Commission on GMV</div>
-              </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Beat Strike Rate</div>
-                <div className="text-2xl font-black text-emerald-600 mt-1">86.4%</div>
-                <div className="text-xs text-slate-500 mt-1">11 orders booked from 13 visits</div>
-              </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Average Transit SLA</div>
-                <div className="text-2xl font-black text-slate-800 mt-1">22 mins</div>
-                <div className="text-xs text-slate-500 mt-1">Verified via 4-Digit Delivery OTP</div>
-              </div>
-              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-                <div className="text-xs font-semibold text-slate-500 uppercase">Net Payroll Savings</div>
-                <div className="text-2xl font-black text-emerald-600 mt-1">81.8%</div>
-                <div className="text-xs text-slate-500 mt-1">₹27,000 saved / month / route</div>
-              </div>
-            </div>
+            <SavingsCalculator />
 
-            {/* Interactive Savings Simulator */}
-            <div>
-              <SavingsCalculator />
-            </div>
-
-            {/* Live Incoming Orders & OTP Fulfillment */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
                 <div>
                   <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                    <Truck className="w-5 h-5 text-indigo-600" />
-                    Incoming Sub-Orders & Delivery OTP Desk
+                    <Building2 className="w-5 h-5 text-indigo-600" />
+                    Incoming B2B Sub-Orders (Anagata FMCG Wholesale)
                   </h3>
                   <p className="text-xs text-slate-500">
-                    Dispatched orders trigger a WhatsApp alert to the retailer with the secure 4-digit Delivery OTP.
+                    Orders routed directly to your warehouse with 0% platform commission.
                   </p>
                 </div>
-                <button
-                  onClick={loadData}
-                  className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg"
-                >
+                <button onClick={loadData} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg">
                   <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
 
               <div className="divide-y divide-slate-200">
                 {sellerOrders.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-slate-500">
-                    No orders booked yet. Switch to "Retailer Web" or "Sales Agent" tab to place a test order!
-                  </div>
+                  <div className="p-8 text-center text-sm text-slate-500">No sub-orders received yet.</div>
                 ) : (
-                  sellerOrders.map((so) => (
-                    <div key={so.id} className="p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                      <div className="space-y-1">
+                  sellerOrders.map((order) => (
+                    <div key={order.id} className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                      <div>
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">#{so.masterOrderNumber || "ORD-506874"}</span>
+                          <span className="font-bold text-slate-900 text-base">{order.retailerShopName}</span>
                           <span
-                            className={`px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                              so.status === "DELIVERED"
+                            className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                              order.status === "DELIVERED"
                                 ? "bg-emerald-100 text-emerald-800"
-                                : so.status === "DISPATCHED"
-                                ? "bg-amber-100 text-amber-800"
-                                : "bg-indigo-100 text-indigo-800"
+                                : order.status === "DISPATCHED"
+                                ? "bg-blue-100 text-blue-800"
+                                : "bg-amber-100 text-amber-800"
                             }`}
                           >
-                            {so.status}
+                            {order.status}
                           </span>
                         </div>
-                        <div className="text-sm font-semibold text-slate-700">
-                          {so.retailerShopName || "Gupta Kirana & General Store"}
+                        <div className="text-xs text-slate-600 mt-1">
+                          Master Order: #{order.masterOrderNumber} • Grand Total:{" "}
+                          <span className="font-bold text-slate-900">₹{order.grandTotal?.toLocaleString("en-IN")}</span>
                         </div>
-                        <div className="text-xs text-slate-500 flex items-center gap-3">
-                          <span>{so.items?.length || 1} SKU items</span>
-                          <span>•</span>
-                          <span>Amount: ₹{so.grandTotal.toLocaleString("en-IN")}</span>
-                          {so.transitDurationMinutes && (
-                            <>
-                              <span>•</span>
-                              <span className="font-semibold text-emerald-600">
-                                Transit: {so.transitDurationMinutes} mins
-                              </span>
-                            </>
-                          )}
+                        <div className="text-xs text-slate-500 mt-0.5">
+                          Retailer WhatsApp: {order.retailerPhone} • Payment: {order.paymentTerm || "NET_7"}
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3">
-                        {so.status === "RECEIVED" && (
+                      <div className="flex items-center gap-2">
+                        {order.status === "RECEIVED" && (
                           <button
-                            onClick={() => handleDispatch(so.id)}
-                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
-                          >
-                            <Truck className="w-3.5 h-3.5" />
-                            Dispatch (Send OTP via WhatsApp)
-                          </button>
-                        )}
-                        {so.status === "DISPATCHED" && (
-                          <button
-                            onClick={() => {
-                              setSelectedSubOrder(so);
-                              setIsOtpModalOpen(true);
-                            }}
+                            onClick={() => handleDispatch(order.id)}
                             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
                           >
-                            <KeyRound className="w-3.5 h-3.5" />
-                            Enter Delivery OTP
+                            <Truck className="w-3.5 h-3.5" />
+                            Dispatch & Send OTP
                           </button>
                         )}
-                        {so.status === "DELIVERED" && (
-                          <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200">
-                            <CheckCircle2 className="w-4 h-4" />
-                            Verified (OTP: {so.deliveryOtp})
-                          </div>
+
+                        {order.status === "DISPATCHED" && (
+                          <button
+                            onClick={() => {
+                              setSelectedSubOrder(order);
+                              setIsOtpModalOpen(true);
+                            }}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                            Verify Retailer OTP
+                          </button>
                         )}
+
+                        <button
+                          onClick={() => handleViewInvoice(order.id)}
+                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition flex items-center gap-1"
+                        >
+                          <Receipt className="w-3.5 h-3.5" />
+                          GST Invoice
+                        </button>
                       </div>
                     </div>
                   ))
@@ -374,9 +706,9 @@ export default function Home() {
           </div>
         )}
 
-        {/* ================= SUPER ADMIN VIEW ================= */}
+        {/* ================= 4. SUPER ADMIN KYC VIEW ================= */}
         {activeRole === "ADMIN" && (
-          <div className="space-y-6">
+          <div className="space-y-8">
             <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
                 <div>
@@ -388,10 +720,7 @@ export default function Home() {
                     Review GSTIN / Udyam / Shop licenses. Approving an account instantly unlocks wholesale prices.
                   </p>
                 </div>
-                <button
-                  onClick={loadData}
-                  className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg"
-                >
+                <button onClick={loadData} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg">
                   <RefreshCw className="w-4 h-4" />
                 </button>
               </div>
@@ -434,210 +763,6 @@ export default function Home() {
             </div>
           </div>
         )}
-
-        {/* ================= RETAILER WEB STORE VIEW ================= */}
-        {activeRole === "RETAILER" && (
-          <div className="space-y-6">
-            {/* Status notice */}
-            {orderStatusNotice && (
-              <div className="p-4 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-xl text-xs font-semibold flex items-center justify-between">
-                <span>{orderStatusNotice}</span>
-                <button onClick={() => setOrderStatusNotice("")} className="text-emerald-900 font-bold">✕</button>
-              </div>
-            )}
-
-            {/* Price-gated notification */}
-            {!isPriceUnlocked && (
-              <div className="p-4 bg-amber-50 border border-amber-300 text-amber-800 rounded-xl text-xs font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5 flex-shrink-0 text-amber-600" />
-                <span>
-                  Wholesale prices are hidden. Your KYC status is Pending. Once verified by Admin or your Field Sales Agent, wholesale rates will unlock automatically.
-                </span>
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* Product Catalog Column */}
-              <div className="lg:col-span-2 space-y-4">
-                <h3 className="font-bold text-slate-900 text-lg flex items-center gap-2">
-                  <ShoppingBag className="w-5 h-5 text-indigo-600" />
-                  B2B Multi-Brand Wholesale Catalog
-                </h3>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {catalog.map((prod) => (
-                    <div key={prod.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col justify-between">
-                      <div className="p-4 space-y-2">
-                        <div className="text-xs font-bold text-indigo-600 uppercase tracking-wider">{prod.brand}</div>
-                        <h4 className="font-bold text-slate-900 text-sm">{prod.name}</h4>
-                        <div className="text-xs text-slate-500">Seller: {prod.organizationName}</div>
-                        <div className="text-xs text-slate-500">Seller Minimum Order: ₹{prod.minimumOrderValue}</div>
-
-                        {prod.skus.map((sku: any) => (
-                          <div key={sku.id} className="mt-3 pt-3 border-t border-slate-100 flex items-center justify-between">
-                            <div>
-                              <div className="text-xs font-semibold text-slate-700">{sku.unitTitle}</div>
-                              <div className="text-xs text-slate-400">MOQ: {sku.minimumOrderQuantity} units</div>
-                              <div className="text-sm font-bold text-slate-900 mt-1">
-                                {sku.wholesalePrice ? (
-                                  <>₹{sku.wholesalePrice} <span className="text-xs text-slate-400 line-through">₹{sku.mrp}</span></>
-                                ) : (
-                                  <span className="text-xs text-amber-600 font-bold">🔒 Price Locked (KYC)</span>
-                                )}
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => setCart(prev => ({ ...prev, [sku.id]: Math.max(0, (prev[sku.id] || 0) - 1) }))}
-                                className="w-7 h-7 bg-slate-100 hover:bg-slate-200 rounded font-bold text-xs"
-                              >
-                                -
-                              </button>
-                              <span className="text-xs font-bold w-6 text-center">{cart[sku.id] || 0}</span>
-                              <button
-                                onClick={() => setCart(prev => ({ ...prev, [sku.id]: (prev[sku.id] || 0) + 1 }))}
-                                className="w-7 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-bold text-xs"
-                              >
-                                +
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Shopping Cart & Delivery OTP Tracker */}
-              <div className="space-y-6">
-                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-4">
-                  <h4 className="font-bold text-slate-900 text-base">Master Shopping Cart</h4>
-                  <div className="text-xs text-slate-500">
-                    Items will be automatically split into sub-orders for each wholesaler.
-                  </div>
-
-                  <div className="divide-y divide-slate-100 text-xs">
-                    {Object.entries(cart).filter(([_, q]) => q > 0).length === 0 ? (
-                      <div className="py-4 text-center text-slate-400">Cart is empty</div>
-                    ) : (
-                      Object.entries(cart).filter(([_, q]) => q > 0).map(([skuId, qty]) => (
-                        <div key={skuId} className="py-2 flex justify-between">
-                          <span>SKU {skuId.slice(0, 12)}... (x{qty})</span>
-                          <span className="font-bold">Added</span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-
-                  <button
-                    onClick={handleCheckout}
-                    disabled={Object.values(cart).every(v => v === 0)}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-lg shadow-sm transition"
-                  >
-                    Place Wholesale Order
-                  </button>
-                </div>
-
-                {/* My Orders with 4-digit Delivery OTP */}
-                <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm space-y-3">
-                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                    <KeyRound className="w-4 h-4 text-indigo-600" />
-                    My Active Delivery OTPs
-                  </h4>
-
-                  {retailerOrders.length === 0 ? (
-                    <div className="text-xs text-slate-400 py-2">No active orders</div>
-                  ) : (
-                    retailerOrders.map(mo => (
-                      <div key={mo.id} className="space-y-2 pt-2 border-t border-slate-100">
-                        <div className="flex justify-between items-center text-xs font-semibold">
-                          <span>#{mo.orderNumber}</span>
-                          <span className="text-indigo-600 font-bold">₹{mo.totalAmount.toLocaleString("en-IN")}</span>
-                        </div>
-                        {mo.subOrders?.map((so: any) => (
-                          <div key={so.id} className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 text-xs">
-                            <div className="flex justify-between font-medium">
-                              <span>{so.organizationName}</span>
-                              <span className="font-bold text-indigo-600">{so.status}</span>
-                            </div>
-                            <div className="mt-1 flex items-center justify-between">
-                              <span className="text-slate-500">Delivery OTP:</span>
-                              <span className="font-mono text-sm font-black text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded">
-                                {so.deliveryOtp}
-                              </span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ================= FIELD SALES AGENT VIEW ================= */}
-        {activeRole === "AGENT" && (
-          <div className="space-y-6">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-base flex items-center gap-2">
-                    <MapPin className="w-4 h-4 text-emerald-400" />
-                    Today's 6-Day Beat: {todayBeat?.beatName || "Monday Hazratganj Route"}
-                  </h3>
-                  <div className="text-xs text-slate-300 mt-0.5">
-                    Agent: Rahul Sharma • Stops Visited: {todayBeat?.visitedStops || 0} / {todayBeat?.totalStops || 2}
-                  </div>
-                </div>
-                <div className="text-xs bg-indigo-600 px-3 py-1 rounded-full font-bold">
-                  Geofence Radius: 100m
-                </div>
-              </div>
-
-              {checkinMessage && (
-                <div className="p-4 bg-emerald-50 border-b border-emerald-200 text-emerald-800 text-xs font-semibold">
-                  {checkinMessage}
-                </div>
-              )}
-
-              <div className="divide-y divide-slate-200">
-                {todayBeat?.stops?.map((stop: any) => (
-                  <div key={stop.id} className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-slate-100 border border-slate-300 text-slate-700 text-xs font-bold flex items-center justify-center">
-                          {stop.sequenceOrder}
-                        </span>
-                        <h4 className="font-bold text-slate-900 text-base">{stop.shopName}</h4>
-                        {stop.isVisited && (
-                          <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2 py-0.5 rounded-full">
-                            VISITED ({stop.visitDisposition})
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-xs text-slate-600 mt-1">Owner: {stop.ownerName} • {stop.address}</div>
-                      <div className="text-xs text-slate-500 mt-0.5">GPS Pin: {stop.latitude}, {stop.longitude}</div>
-                    </div>
-
-                    <div className="flex gap-2">
-                      <button
-                        onClick={() => handleAgentCheckin(stop.retailerId)}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
-                      >
-                        <MapPin className="w-3.5 h-3.5" />
-                        Check-In (&lt;100m)
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
       </main>
 
       {/* Modals */}
@@ -654,6 +779,21 @@ export default function Home() {
         onClose={() => setIsOtpModalOpen(false)}
         subOrder={selectedSubOrder}
         onVerify={handleVerifyOtp}
+      />
+
+      <B2bCheckoutModal
+        isOpen={isCheckoutModalOpen}
+        onClose={() => setIsCheckoutModalOpen(false)}
+        cart={cart}
+        products={catalog}
+        retailerProfile={retailerProfile}
+        onConfirmOrder={handleConfirmOrder}
+      />
+
+      <GstInvoiceModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        invoice={selectedInvoice}
       />
     </div>
   );

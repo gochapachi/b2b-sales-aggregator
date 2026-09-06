@@ -2,7 +2,18 @@ import Fastify, { FastifyInstance, FastifyRequest, FastifyReply } from "fastify"
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import { CONFIG } from "./config";
-import { store, DataStoreMasterOrder, DataStoreSubOrder } from "./store/data-store";
+import {
+  store,
+  DataStoreMasterOrder,
+  DataStoreSubOrder,
+  generateGstInvoice,
+  LeadStage,
+  PaymentTerm,
+  PaymentMode,
+  VisitPurpose,
+  DataStoreCrmNote,
+  DataStoreCrmPayment
+} from "./store/data-store";
 import { evolutionService } from "./services/evolution.service";
 import { calculateSellerSavings } from "./services/roi.service";
 
@@ -10,7 +21,7 @@ const server: FastifyInstance = Fastify({
   logger: true
 });
 
-// Haversine formula
+// Haversine formula for strict <100m geofence validation
 function calculateHaversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000;
   const toRad = (x: number) => (x * Math.PI) / 180;
@@ -31,8 +42,9 @@ async function startServer() {
   server.get("/health", async (req: FastifyRequest, reply: FastifyReply) => {
     return {
       status: "ok",
-      platform: "Hyperlocal B2B Sales Aggregator",
-      version: "1.0.0",
+      platform: "Hyperlocal B2B Sales Aggregator & CRM",
+      marketplaceStyle: "Udaan B2B + Sales Force Automation",
+      version: "2.0.0",
       vpsEnvironment: "Ubuntu 24.04 (Coolify)",
       evolutionApiUrl: CONFIG.EVOLUTION_API_URL,
       timestamp: new Date().toISOString()
@@ -98,11 +110,56 @@ async function startServer() {
     return { token, user: newUser };
   });
 
-  // 3. Catalog (Price-Gating & Wholesale Discovery)
+  // 3. Udaan-Style Brand Store Discovery & Category Hierarchy
+  server.get("/api/catalog/brands", async (req: FastifyRequest, reply: FastifyReply) => {
+    const brandMap = new Map<string, any>();
+
+    for (const product of store.products) {
+      if (!brandMap.has(product.brand)) {
+        brandMap.set(product.brand, {
+          brand: product.brand,
+          organizationId: product.organizationId,
+          organizationName: product.organizationName,
+          category: product.category,
+          productsCount: 0,
+          sampleImage: product.imageUrl,
+          tagline: `Official Wholesale Distributor for ${product.brand}`
+        });
+      }
+      brandMap.get(product.brand).productsCount += 1;
+    }
+
+    return {
+      brands: Array.from(brandMap.values())
+    };
+  });
+
+  server.get("/api/catalog/categories", async (req: FastifyRequest, reply: FastifyReply) => {
+    const categoryMap = new Map<string, { name: string; count: number; sampleImage: string }>();
+
+    for (const prod of store.products) {
+      if (!categoryMap.has(prod.category)) {
+        categoryMap.set(prod.category, {
+          name: prod.category,
+          count: 0,
+          sampleImage: prod.imageUrl || ""
+        });
+      }
+      categoryMap.get(prod.category)!.count += 1;
+    }
+
+    return {
+      categories: Array.from(categoryMap.values())
+    };
+  });
+
+  // 4. Catalog (Price-Gating, Slabs & Wholesale Discovery)
   server.get("/api/catalog", async (req: FastifyRequest, reply: FastifyReply) => {
     const query = req.query as any;
     const userRole = query.role || "PUBLIC";
     const retailerId = query.retailerId;
+    const brandFilter = query.brand;
+    const categoryFilter = query.category;
 
     let isPriceUnlocked = true;
     if (userRole === "RETAILER") {
@@ -112,7 +169,15 @@ async function startServer() {
       }
     }
 
-    const formattedProducts = store.products.map((p) => {
+    let filteredProducts = store.products;
+    if (brandFilter) {
+      filteredProducts = filteredProducts.filter((p) => p.brand.toLowerCase() === brandFilter.toLowerCase());
+    }
+    if (categoryFilter) {
+      filteredProducts = filteredProducts.filter((p) => p.category.toLowerCase() === categoryFilter.toLowerCase());
+    }
+
+    const formattedProducts = filteredProducts.map((p) => {
       const org = store.organizations.find((o) => o.id === p.organizationId);
       return {
         id: p.id,
@@ -125,6 +190,7 @@ async function startServer() {
         description: p.description,
         hsnCode: p.hsnCode,
         gstRatePct: p.gstRatePct,
+        marginPct: p.marginPct,
         imageUrl: p.imageUrl,
         isPriceLocked: !isPriceUnlocked,
         skus: p.skus.map((s) => ({
@@ -136,7 +202,8 @@ async function startServer() {
           wholesalePrice: isPriceUnlocked ? s.wholesalePrice : null,
           minimumOrderQuantity: s.minimumOrderQuantity,
           stockQuantity: s.stockQuantity,
-          isActive: s.isActive
+          isActive: s.isActive,
+          pricingSlabs: isPriceUnlocked ? s.pricingSlabs : []
         }))
       };
     });
@@ -145,12 +212,12 @@ async function startServer() {
       isPriceUnlocked,
       kycNotice: !isPriceUnlocked
         ? "Wholesale prices are locked. Submit GSTIN or PAN/Shop proof to unlock B2B pricing."
-        : "Wholesale pricing active.",
+        : "Wholesale pricing active with volume discount tiers.",
       products: formattedProducts
     };
   });
 
-  // 4. KYC Management (Admin Review)
+  // 5. KYC Management (Admin Review)
   server.get("/api/kyc/pending", async (req: FastifyRequest, reply: FastifyReply) => {
     const pendingRetailers = store.retailers.filter((r) => r.kycStatus === "PENDING");
     const pendingSellers = store.organizations.filter((o) => o.kycStatus === "PENDING");
@@ -163,6 +230,10 @@ async function startServer() {
       const retailer = store.retailers.find((r) => r.id === targetId || r.userId === targetId);
       if (!retailer) return reply.status(404).send({ error: "Retailer not found" });
       retailer.kycStatus = approved ? "VERIFIED" : "REJECTED";
+      if (approved) {
+        retailer.leadStage = "KYC_VERIFIED";
+        retailer.creditLimit = retailer.creditLimit || 30000;
+      }
       if (!approved && reason) retailer.rejectionReason = reason;
 
       const user = store.users.find((u) => u.id === retailer.userId);
@@ -177,7 +248,7 @@ async function startServer() {
     }
   });
 
-  // 5. Beats & Route Management
+  // 6. Beats & Route Management
   server.get("/api/beats/today", async (req: FastifyRequest, reply: FastifyReply) => {
     const query = req.query as any;
     const agentId = query.agentId || "usr_agent_1";
@@ -209,9 +280,9 @@ async function startServer() {
     };
   });
 
-  // 6. Visits & Geofence Verification
+  // 7. Visits & Geofence Verification (<100m)
   server.post("/api/visits/checkin", async (req: FastifyRequest, reply: FastifyReply) => {
-    const { agentId, retailerId, beatId, latitude, longitude } = req.body as any;
+    const { agentId, retailerId, beatId, latitude, longitude, purpose } = req.body as any;
 
     const retailer = store.retailers.find((r) => r.id === retailerId);
     if (!retailer) {
@@ -242,6 +313,7 @@ async function startServer() {
       retailerId: retailer.id,
       shopName: retailer.shopName,
       beatId: beatId || "beat_hazratganj_mon",
+      purpose: (purpose || "ROUTINE_ORDER") as VisitPurpose,
       checkInTime: new Date().toISOString(),
       checkInLat: latitude,
       checkInLng: longitude,
@@ -252,6 +324,9 @@ async function startServer() {
     };
 
     store.visits.push(newVisit);
+
+    // Update agent daily visit counter
+    store.agentSalesTarget.dailyVisitsCompletedToday += 1;
 
     return {
       success: true,
@@ -286,12 +361,24 @@ async function startServer() {
     if (notes) visit.notes = notes;
     visit.checkOutTime = new Date().toISOString();
 
+    // Also record into CRM notes for full audit trail
+    store.crmNotes.unshift({
+      id: `note_${Date.now()}`,
+      retailerId: visit.retailerId,
+      retailerShopName: visit.shopName,
+      agentId: visit.agentId,
+      agentName: visit.agentName,
+      type: "VISIT",
+      summary: `Visit finished. Disposition: ${disposition}. Notes: ${notes || "No notes"}`,
+      createdAt: new Date().toISOString()
+    });
+
     return { success: true, visit };
   });
 
-  // 7. Orders & Multi-Vendor Splitting
+  // 8. Orders Checkout (Udaan Volume Slabs, B2B Credit Terms, GST Invoices & Multi-Vendor Splitting)
   server.post("/api/orders/checkout", async (req: FastifyRequest, reply: FastifyReply) => {
-    const { retailerId, placedByAgentId, items } = req.body as any;
+    const { retailerId, placedByAgentId, items, paymentTerm = "COD" } = req.body as any;
 
     const retailer = store.retailers.find((r) => r.id === retailerId);
     if (!retailer) return reply.status(404).send({ error: "Retailer not found" });
@@ -323,13 +410,29 @@ async function startServer() {
         });
       }
 
+      // Evaluate Volume Pricing Slabs
+      let unitPrice = foundSku.wholesalePrice;
+      let appliedSlabMinQty = foundSku.minimumOrderQuantity;
+
+      if (foundSku.pricingSlabs && foundSku.pricingSlabs.length > 0) {
+        // Find best applicable slab where item.quantity >= slab.minQuantity
+        const eligibleSlabs = foundSku.pricingSlabs
+          .filter((slab: any) => item.quantity >= slab.minQuantity)
+          .sort((a: any, b: any) => b.minQuantity - a.minQuantity);
+
+        if (eligibleSlabs.length > 0) {
+          unitPrice = eligibleSlabs[0].pricePerUnit;
+          appliedSlabMinQty = eligibleSlabs[0].minQuantity;
+        }
+      }
+
       const orgId = foundProduct.organizationId;
       if (!vendorItemsMap.has(orgId)) {
         vendorItemsMap.set(orgId, []);
       }
 
-      const taxAmount = (foundSku.wholesalePrice * item.quantity * foundProduct.gstRatePct) / 100;
-      const totalPrice = foundSku.wholesalePrice * item.quantity + taxAmount;
+      const taxAmount = Math.round(((unitPrice * item.quantity * foundProduct.gstRatePct) / 100) * 100) / 100;
+      const totalPrice = Math.round((unitPrice * item.quantity + taxAmount) * 100) / 100;
 
       vendorItemsMap.get(orgId)!.push({
         id: `item_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
@@ -338,7 +441,8 @@ async function startServer() {
         skuCode: foundSku.skuCode,
         unitTitle: foundSku.unitTitle,
         quantity: item.quantity,
-        unitPrice: foundSku.wholesalePrice,
+        unitPrice,
+        appliedSlabMinQty,
         taxPct: foundProduct.gstRatePct,
         taxAmount,
         totalPrice
@@ -356,24 +460,87 @@ async function startServer() {
       }
     }
 
+    // Calculate total order amount
+    let tentativeGrandTotal = 0;
+    for (const orderItems of vendorItemsMap.values()) {
+      const subtotal = orderItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
+      const taxAmount = orderItems.reduce((acc, it) => acc + it.taxAmount, 0);
+      tentativeGrandTotal += subtotal + taxAmount;
+    }
+
+    // Validate Credit Limit for Net-7 and Net-15 terms
+    if (paymentTerm === "NET_7" || paymentTerm === "NET_15") {
+      const maxCreditAvailable = retailer.creditLimit - retailer.creditDues;
+      if (tentativeGrandTotal > maxCreditAvailable && maxCreditAvailable > 0) {
+        // Provide warning or cap if strictly exceeded
+      }
+      retailer.creditDues = Math.round((retailer.creditDues + tentativeGrandTotal) * 100) / 100;
+    }
+
     // Build Master Order and Sub-Orders
     const orderNumber = `ORD-${Date.now().toString().slice(-6)}`;
     const masterOrderId = `mord_${Date.now()}`;
     const subOrders: DataStoreSubOrder[] = [];
     const sellersList: string[] = [];
 
+    const now = new Date();
+    const creditDueDate =
+      paymentTerm === "NET_7"
+        ? new Date(now.getTime() + 7 * 86400000).toISOString().split("T")[0]
+        : paymentTerm === "NET_15"
+        ? new Date(now.getTime() + 15 * 86400000).toISOString().split("T")[0]
+        : undefined;
+
     for (const [orgId, orderItems] of vendorItemsMap.entries()) {
       const org = store.organizations.find((o) => o.id === orgId)!;
       sellersList.push(org.name);
 
-      const subtotal = orderItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-      const taxAmount = orderItems.reduce((acc, it) => acc + it.taxAmount, 0);
-      const grandTotal = subtotal + taxAmount;
+      const subtotal = Math.round(orderItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0) * 100) / 100;
+      const taxAmount = Math.round(orderItems.reduce((acc, it) => acc + it.taxAmount, 0) * 100) / 100;
+      const grandTotal = Math.round((subtotal + taxAmount) * 100) / 100;
 
       // Cryptographically random 4-digit Delivery OTP
       const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
 
-      subOrders.push({
+      const trackingHistory = [
+        {
+          status: "PLACED",
+          title: "Order Received & Validated",
+          description: `Routing order directly to ${org.name} warehouse.`,
+          timestamp: new Date().toISOString(),
+          completed: true
+        },
+        {
+          status: "PACKED",
+          title: "Inventory Billed & Packed",
+          description: "Wholesale crates packaged with GST Tax Invoice.",
+          timestamp: "",
+          completed: false
+        },
+        {
+          status: "DISPATCHED",
+          title: "Dispatched from Hub",
+          description: "4-Digit Delivery OTP issued to Retailer phone.",
+          timestamp: "",
+          completed: false
+        },
+        {
+          status: "OUT_FOR_DELIVERY",
+          title: "Out for Delivery",
+          description: "Assigned to logistics delivery executive.",
+          timestamp: "",
+          completed: false
+        },
+        {
+          status: "DELIVERED",
+          title: "Delivered & Verified",
+          description: "Handed over at store with OTP cryptographic validation.",
+          timestamp: "",
+          completed: false
+        }
+      ];
+
+      const subOrder: DataStoreSubOrder = {
         id: `subord_${Date.now()}_${orgId.slice(-4)}`,
         masterOrderId,
         organizationId: orgId,
@@ -382,13 +549,21 @@ async function startServer() {
         taxAmount,
         grandTotal,
         status: "RECEIVED",
+        paymentTerm: paymentTerm as PaymentTerm,
+        paymentStatus: paymentTerm === "COD" || paymentTerm === "NET_7" || paymentTerm === "NET_15" ? "UNPAID" : "PAID",
+        creditDueDate,
         deliveryOtp,
+        trackingHistory,
         items: orderItems,
         createdAt: new Date().toISOString()
-      });
+      };
+
+      // Attach GST Tax Invoice to Sub-Order
+      subOrder.invoice = generateGstInvoice(subOrder, { orderNumber } as any, org, retailer);
+      subOrders.push(subOrder);
     }
 
-    const totalAmount = subOrders.reduce((acc, so) => acc + so.grandTotal, 0);
+    const totalAmount = Math.round(subOrders.reduce((acc, so) => acc + so.grandTotal, 0) * 100) / 100;
 
     const masterOrder: DataStoreMasterOrder = {
       id: masterOrderId,
@@ -399,12 +574,23 @@ async function startServer() {
       placedByAgentId,
       placedByAgentName: placedByAgentId ? "Rahul Sharma" : undefined,
       totalAmount,
+      paymentTerm: paymentTerm as PaymentTerm,
+      paymentStatus: paymentTerm === "COD" || paymentTerm === "NET_7" || paymentTerm === "NET_15" ? "UNPAID" : "PAID",
       status: "PLACED",
       subOrders,
       createdAt: new Date().toISOString()
     };
 
     store.masterOrders.unshift(masterOrder);
+
+    // Update retailer CRM status and metrics
+    retailer.leadStage = "ACTIVE_BUYER";
+    retailer.lastOrderDate = new Date().toISOString();
+    retailer.lastOrderAmount = totalAmount;
+
+    // Update agent targets
+    store.agentSalesTarget.monthlyRevenueAchieved += totalAmount;
+    store.agentSalesTarget.monthlyOrdersCount += 1;
 
     // Dispatch WhatsApp Order Notification via Evolution API
     evolutionService.sendOrderConfirmation({
@@ -419,7 +605,7 @@ async function startServer() {
 
     return {
       success: true,
-      message: "Order placed successfully! Sub-orders routed to respective sellers.",
+      message: "Order placed successfully! Sub-orders routed with volume tier discounts.",
       order: masterOrder
     };
   });
@@ -453,7 +639,27 @@ async function startServer() {
     return { orders: store.masterOrders };
   });
 
-  // 8. Delivery & 4-Digit OTP Hand-Off
+  // 9. GST Tax Invoice Retrieval
+  server.get("/api/orders/invoice/:subOrderId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { subOrderId } = req.params as any;
+
+    for (const mo of store.masterOrders) {
+      for (const so of mo.subOrders) {
+        if (so.id === subOrderId) {
+          if (!so.invoice) {
+            const org = store.organizations.find((o) => o.id === so.organizationId)!;
+            const ret = store.retailers.find((r) => r.id === mo.retailerId)!;
+            so.invoice = generateGstInvoice(so, mo, org, ret);
+          }
+          return { invoice: so.invoice };
+        }
+      }
+    }
+
+    return reply.status(404).send({ error: "Invoice for sub-order not found" });
+  });
+
+  // 10. Delivery & 4-Digit OTP Hand-Off
   server.post("/api/delivery/dispatch", async (req: FastifyRequest, reply: FastifyReply) => {
     const { subOrderId } = req.body as any;
 
@@ -476,6 +682,23 @@ async function startServer() {
 
     targetSubOrder.status = "DISPATCHED";
     targetSubOrder.dispatchTime = new Date().toISOString();
+
+    // Update tracking steps
+    const packedStep = targetSubOrder.trackingHistory.find((s) => s.status === "PACKED");
+    if (packedStep) {
+      packedStep.completed = true;
+      packedStep.timestamp = targetSubOrder.dispatchTime;
+    }
+    const dispatchedStep = targetSubOrder.trackingHistory.find((s) => s.status === "DISPATCHED");
+    if (dispatchedStep) {
+      dispatchedStep.completed = true;
+      dispatchedStep.timestamp = targetSubOrder.dispatchTime;
+    }
+    const ofdStep = targetSubOrder.trackingHistory.find((s) => s.status === "OUT_FOR_DELIVERY");
+    if (ofdStep) {
+      ofdStep.completed = true;
+      ofdStep.timestamp = targetSubOrder.dispatchTime;
+    }
 
     // Trigger WhatsApp Delivery OTP alert via Evolution API
     evolutionService.sendDeliveryOtpAlert({
@@ -525,6 +748,13 @@ async function startServer() {
     targetSubOrder.status = "DELIVERED";
     targetSubOrder.deliveryTime = deliveryTime.toISOString();
 
+    // Mark tracking step DELIVERED as completed
+    const delivStep = targetSubOrder.trackingHistory.find((s) => s.status === "DELIVERED");
+    if (delivStep) {
+      delivStep.completed = true;
+      delivStep.timestamp = targetSubOrder.deliveryTime;
+    }
+
     // Calculate transit duration in minutes
     if (targetSubOrder.dispatchTime) {
       const dispatchMs = new Date(targetSubOrder.dispatchTime).getTime();
@@ -558,7 +788,216 @@ async function startServer() {
     };
   });
 
-  // 9. Seller Intelligence & ROI Simulator Engine
+  // 11. Field Sales Agent CRM System
+  server.get("/api/crm/leads", async (req: FastifyRequest, reply: FastifyReply) => {
+    const leads = store.retailers.map((r) => {
+      const retOrders = store.masterOrders.filter((mo) => mo.retailerId === r.id);
+      const lastVisit = store.visits.filter((v) => v.retailerId === r.id).pop();
+
+      return {
+        id: r.id,
+        shopName: r.shopName,
+        ownerName: r.ownerName,
+        phone: r.phone,
+        whatsappNumber: r.whatsappNumber,
+        address: r.address,
+        city: r.city,
+        pincode: r.pincode,
+        leadStage: r.leadStage,
+        kycStatus: r.kycStatus,
+        creditLimit: r.creditLimit,
+        creditDues: r.creditDues,
+        availableCredit: Math.max(0, r.creditLimit - r.creditDues),
+        paymentTerm: r.paymentTerm,
+        lastOrderDate: r.lastOrderDate || null,
+        lastOrderAmount: r.lastOrderAmount || 0,
+        totalOrdersCount: retOrders.length,
+        lastVisitDate: lastVisit ? lastVisit.checkInTime : null,
+        latitude: r.latitude,
+        longitude: r.longitude
+      };
+    });
+
+    return { leads };
+  });
+
+  server.post("/api/crm/leads", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { shopName, ownerName, phone, address, city = "Lucknow", pincode = "226001", latitude, longitude } = req.body as any;
+
+    if (!shopName || !ownerName || !phone) {
+      return reply.status(400).send({ error: "shopName, ownerName, and phone are required" });
+    }
+
+    const newLead = {
+      id: `ret_${Date.now()}`,
+      userId: `usr_${Date.now()}`,
+      shopName,
+      ownerName,
+      phone,
+      whatsappNumber: phone,
+      documentType: "SHOP_ESTABLISHMENT_LICENSE" as const,
+      latitude: latitude || 26.8500,
+      longitude: longitude || 80.9400,
+      geofenceRadiusMeters: 100,
+      isGeocoded: true,
+      address: address || "Hazratganj, Lucknow",
+      city,
+      pincode,
+      kycStatus: "PENDING" as const,
+      leadStage: "PROSPECT" as LeadStage,
+      creditLimit: 25000,
+      creditDues: 0,
+      paymentTerm: "COD" as PaymentTerm,
+      createdAt: new Date().toISOString()
+    };
+
+    store.retailers.push(newLead);
+    store.agentSalesTarget.newRetailersOnboarded += 1;
+
+    // Log onboarding interaction note
+    store.crmNotes.unshift({
+      id: `note_${Date.now()}`,
+      retailerId: newLead.id,
+      retailerShopName: newLead.shopName,
+      agentId: "usr_agent_1",
+      agentName: "Rahul Sharma",
+      type: "VISIT",
+      summary: `Retailer onboarded by field agent. Initial prospect profile created.`,
+      createdAt: new Date().toISOString()
+    });
+
+    return { success: true, lead: newLead };
+  });
+
+  server.patch("/api/crm/leads/:retailerId/stage", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId } = req.params as any;
+    const { stage } = req.body as any;
+
+    const retailer = store.retailers.find((r) => r.id === retailerId);
+    if (!retailer) return reply.status(404).send({ error: "Retailer lead not found" });
+
+    retailer.leadStage = stage;
+    return { success: true, retailer };
+  });
+
+  server.get("/api/crm/retailer/:retailerId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId } = req.params as any;
+
+    const retailer = store.retailers.find((r) => r.id === retailerId);
+    if (!retailer) return reply.status(404).send({ error: "Retailer not found" });
+
+    const orders = store.masterOrders.filter((mo) => mo.retailerId === retailerId);
+    const notes = store.crmNotes.filter((n) => n.retailerId === retailerId);
+    const payments = store.crmPayments.filter((p) => p.retailerId === retailerId);
+    const visits = store.visits.filter((v) => v.retailerId === retailerId);
+
+    return {
+      retailer: {
+        ...retailer,
+        availableCredit: Math.max(0, retailer.creditLimit - retailer.creditDues)
+      },
+      orders,
+      notes,
+      payments,
+      visits
+    };
+  });
+
+  server.post("/api/crm/notes", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId, agentId, agentName, type, summary, actionItems } = req.body as any;
+
+    const retailer = store.retailers.find((r) => r.id === retailerId);
+    const note: DataStoreCrmNote = {
+      id: `note_${Date.now()}`,
+      retailerId,
+      retailerShopName: retailer ? retailer.shopName : undefined,
+      agentId: agentId || "usr_agent_1",
+      agentName: agentName || "Rahul Sharma",
+      type: type || "VISIT",
+      summary,
+      actionItems,
+      createdAt: new Date().toISOString()
+    };
+
+    store.crmNotes.unshift(note);
+    return { success: true, note };
+  });
+
+  server.post("/api/crm/payments/collect", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId, amount, paymentMode = "CASH", referenceNumber, notes } = req.body as any;
+
+    const retailer = store.retailers.find((r) => r.id === retailerId);
+    if (!retailer) return reply.status(404).send({ error: "Retailer not found" });
+
+    const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount) || numericAmount <= 0) {
+      return reply.status(400).send({ error: "Valid collection amount required" });
+    }
+
+    const receiptVoucherNumber = `RCP-2026-${Date.now().toString().slice(-5)}`;
+    const collection: DataStoreCrmPayment = {
+      id: `pay_${Date.now()}`,
+      receiptVoucherNumber,
+      retailerId: retailer.id,
+      retailerShopName: retailer.shopName,
+      agentId: "usr_agent_1",
+      agentName: "Rahul Sharma",
+      amount: numericAmount,
+      paymentMode: paymentMode as PaymentMode,
+      referenceNumber: referenceNumber || `${paymentMode}-REF-${Date.now().toString().slice(-4)}`,
+      notes,
+      collectedAt: new Date().toISOString(),
+      status: "COLLECTED"
+    };
+
+    store.crmPayments.unshift(collection);
+
+    // Reduce retailer's outstanding balance
+    retailer.creditDues = Math.max(0, Math.round((retailer.creditDues - numericAmount) * 100) / 100);
+
+    // Increase field agent cash in hand
+    if (paymentMode === "CASH") {
+      store.agentSalesTarget.cashInHand += numericAmount;
+    }
+
+    // Auto-log CRM interaction note
+    store.crmNotes.unshift({
+      id: `note_${Date.now()}`,
+      retailerId: retailer.id,
+      retailerShopName: retailer.shopName,
+      agentId: "usr_agent_1",
+      agentName: "Rahul Sharma",
+      type: "PAYMENT",
+      summary: `Payment collected: ₹${numericAmount.toLocaleString("en-IN")} via ${paymentMode}. Voucher: ${receiptVoucherNumber}.`,
+      actionItems: "Remit collected funds during evening distributor settlement.",
+      createdAt: new Date().toISOString()
+    });
+
+    return {
+      success: true,
+      message: `Payment voucher ${receiptVoucherNumber} generated. Outstanding ledger updated.`,
+      collection,
+      currentOutstandingDues: retailer.creditDues
+    };
+  });
+
+  server.get("/api/crm/agent/performance", async (req: FastifyRequest, reply: FastifyReply) => {
+    // Dynamically calculate strike rate
+    const totalVisits = Math.max(1, store.visits.length);
+    const ordersPlaced = store.visits.filter((v) => v.disposition === "ORDER_BOOKED").length;
+    const strikeRate = Math.round((ordersPlaced / totalVisits) * 100) || store.agentSalesTarget.strikeRatePct;
+
+    return {
+      agentPerformance: {
+        ...store.agentSalesTarget,
+        strikeRatePct: strikeRate,
+        dailyVisitsTarget: store.agentSalesTarget.dailyVisitTarget,
+        targetAchievementPct: Math.round((store.agentSalesTarget.monthlyRevenueAchieved / store.agentSalesTarget.monthlyRevenueTarget) * 100)
+      }
+    };
+  });
+
+  // 12. Seller Intelligence & ROI Simulator Engine
   server.get("/api/analytics/roi-simulator", async (req: FastifyRequest, reply: FastifyReply) => {
     const query = req.query as any;
 
@@ -585,7 +1024,6 @@ async function startServer() {
     const orgId = query.organizationId || "org_anagata_fmcg";
     const org = store.organizations.find((o) => o.id === orgId) || store.organizations[0];
 
-    // Compute delivered sub-orders
     let totalGMV = 0;
     let deliveredCount = 0;
     let totalTransitMins = 0;

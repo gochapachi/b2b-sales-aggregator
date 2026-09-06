@@ -74,3 +74,46 @@ export const GEOFENCE_CONFIG = {
 } as const;
 
 export const GST_RATES = [0, 5, 12, 18, 28] as const;
+
+export enum LeadStage {
+  PROSPECT = 'PROSPECT',
+  CONTACTED = 'CONTACTED',
+  KYC_PENDING = 'KYC_PENDING',
+  KYC_VERIFIED = 'KYC_VERIFIED',
+  ACTIVE_BUYER = 'ACTIVE_BUYER',
+  DORMANT = 'DORMANT'
+}
+
+export enum PaymentTerm {
+  CASH_ON_DELIVERY = 'CASH_ON_DELIVERY',
+  CREDIT_NET_7 = 'CREDIT_NET_7',
+  CREDIT_NET_15 = 'CREDIT_NET_15',
+  UPI_ONLINE = 'UPI_ONLINE',
+  BANK_NEFT = 'BANK_NEFT'
+}
+
+export enum VisitPurpose {
+  ROUTINE_BEAT = 'ROUTINE_BEAT',
+  ORDER_BOOKING = 'ORDER_BOOKING',
+  PAYMENT_COLLECTION = 'PAYMENT_COLLECTION',
+  DISPUTE_RESOLUTION = 'DISPUTE_RESOLUTION',
+  NEW_STORE_ONBOARDING = 'NEW_STORE_ONBOARDING'
+}
+
+export enum PaymentMode {
+  CASH = 'CASH',
+  UPI = 'UPI',
+  CHEQUE = 'CHEQUE',
+  NEFT = 'NEFT'
+}
+
+export enum FmcgCategory {
+  STAPLES_GRAINS = 'Staples & Grains',
+  BEVERAGES_DRINKS = 'Beverages & Cold Drinks',
+  SNACKS_CONFECTIONERY = 'Snacks & Confectionery',
+  PACKAGED_FOOD = 'Packaged & Instant Foods',
+  PERSONAL_CARE = 'Personal Care & Hygiene',
+  CLEANING_HOUSEHOLD = 'Cleaning & Household',
+  DAIRY_BAKERY = 'Dairy & Bakery'
+}
+

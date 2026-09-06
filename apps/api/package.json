@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "test": "node --test tests/api.test.js",
+    "test": "node --test tests/api.test.js tests/udaan-crm.test.js",
     "start": "node dist/server.js",
     "dev": "node dist/server.js"
   },
