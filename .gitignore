@@ -2,6 +2,7 @@ node_modules/
 .next/
 dist/
 .agents/
+.agent/
 apps/mobile/android/.gradle/
 apps/mobile/android/app/build/
 apps/mobile/.expo/
