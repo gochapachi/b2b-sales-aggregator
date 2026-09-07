@@ -1,6 +1,8 @@
 export type LeadStage = "PROSPECT" | "CONTACTED" | "KYC_PENDING" | "KYC_VERIFIED" | "ACTIVE_BUYER" | "DORMANT";
-export type PaymentTerm = "COD" | "NET_7" | "NET_15" | "NET_30" | "UPI_INSTANT" | "NEFT_RTGS";
-export type PaymentMode = "CASH" | "UPI_QR" | "CHEQUE" | "BANK_TRANSFER";
+export type PaymentTerm = "COD" | "NET_7" | "NET_15" | "NET_30" | "NET_45" | "WEEKLY_SETTLEMENT" | "UPI_INSTANT" | "NEFT_RTGS";
+export type PaymentMode = "CASH" | "UPI_QR" | "CHEQUE" | "BANK_TRANSFER" | "DIRECT_SELLER_UPI";
+export type CreditLineStatus = "ACTIVE" | "CREDIT_HOLD" | "UNDER_REVIEW" | "REJECTED";
+export type LedgerEntryType = "INVOICE" | "PAYMENT_VOUCHER" | "CREDIT_NOTE";
 export type VisitPurpose = "ROUTINE_ORDER" | "NEW_PRODUCT_LAUNCH" | "PAYMENT_COLLECTION" | "KYC_DOCUMENT_COLLECTION" | "STOCK_AUDIT" | "COMPLAINT_RESOLUTION";
 
 export interface DataStoreUser {
@@ -66,18 +68,81 @@ export interface DataStorePricingSlab {
   label: string;
 }
 
+export interface DataStoreGroupedProductItem {
+  productSkuId: string;
+  productName: string;
+  skuCode: string;
+  unitQuantity: number;
+}
+
 export interface DataStoreProductSku {
   id: string;
   productId: string;
   skuCode: string;
   unitTitle: string;
   unitMultiplier: number;
+  packMultiplier?: number;
+  cartonMultiplier?: number;
   mrp: number;
   wholesalePrice: number;
   minimumOrderQuantity: number;
   stockQuantity: number;
   isActive: boolean;
   pricingSlabs?: DataStorePricingSlab[];
+  isGroupedBundle?: boolean;
+  bundleItems?: DataStoreGroupedProductItem[];
+}
+
+export interface DataStoreCreditLine {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  retailerId: string;
+  retailerShopName?: string;
+  creditLimit: number;
+  currentDues: number;
+  availableCredit: number;
+  paymentTerm: PaymentTerm;
+  status: CreditLineStatus;
+  creditGraceDays: number;
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface DataStorePaymentVoucher {
+  id: string;
+  voucherNumber: string;
+  retailerId: string;
+  retailerShopName: string;
+  organizationId: string;
+  organizationName: string;
+  agentId?: string;
+  agentName?: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  referenceNumber?: string;
+  bankName?: string;
+  chequeDate?: string;
+  notes?: string;
+  status: "RECORDED" | "VERIFIED" | "REJECTED";
+  recordedAt: string;
+  verifiedAt?: string;
+}
+
+export interface DataStoreLedgerEntry {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  retailerId: string;
+  retailerShopName: string;
+  date: string;
+  type: LedgerEntryType;
+  referenceId: string;
+  referenceNumber: string;
+  description: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
 }
 
 export interface DataStoreProduct {
@@ -365,6 +430,120 @@ export function generateGstInvoice(
     grandTotal,
     irn: `8f3b${Date.now().toString(16)}a9c1482e90df54a72d3f99b24e6a0d`,
     qrCodeData: `upi://pay?pa=billing@anagata.b2b&pn=${encodeURIComponent(sellerOrg.name)}&am=${grandTotal}&cu=INR&tr=${invoiceNumber}`
+  };
+}
+
+export function generateEWayBillPayload(
+  subOrder: DataStoreSubOrder,
+  sellerOrg: DataStoreOrganization,
+  retailer: DataStoreRetailerProfile
+) {
+  const invoice = subOrder.invoice;
+  const taxableSubtotal = invoice ? invoice.taxableSubtotal : subOrder.subtotal;
+  const grandTotal = invoice ? invoice.grandTotal : subOrder.grandTotal;
+  const cgstTotal = invoice ? invoice.cgstTotal : Math.round((subOrder.taxAmount / 2) * 100) / 100;
+  const sgstTotal = invoice ? invoice.sgstTotal : Math.round((subOrder.taxAmount / 2) * 100) / 100;
+  const invoiceNumber = invoice ? invoice.invoiceNumber : `INV-${subOrder.id.slice(-6).toUpperCase()}`;
+  const invoiceDate = invoice ? invoice.invoiceDate.split("T")[0] : new Date().toISOString().split("T")[0];
+
+  const itemDetails = subOrder.items.map((it) => {
+    const taxableAmount = Math.round(it.unitPrice * it.quantity * 100) / 100;
+    const cgstAmount = Math.round(((taxableAmount * (it.taxPct / 2)) / 100) * 100) / 100;
+    const sgstAmount = Math.round(((taxableAmount * (it.taxPct / 2)) / 100) * 100) / 100;
+    return {
+      productName: it.productName,
+      productDesc: it.unitTitle,
+      hsnCode: it.productName.includes("Biscuit") ? "19053100" : it.productName.includes("Tea") ? "09024010" : "22021010",
+      quantity: it.quantity,
+      qtyUnit: "UNT",
+      taxableAmount,
+      cgstRate: it.taxPct / 2,
+      cgstAmount,
+      sgstRate: it.taxPct / 2,
+      sgstAmount,
+      igstRate: 0,
+      igstAmount: 0
+    };
+  });
+
+  const formattedCopyText = `=== GOVERNMENT OF INDIA E-WAY BILL SYSTEM (NIC PORTAL) ===
+DOCUMENT TYPE: Tax Invoice
+DOCUMENT NO: ${invoiceNumber}
+DOCUMENT DATE: ${invoiceDate}
+TRANSACTION TYPE: Regular | SUPPLY TYPE: Outward - Supply
+
+--- PART A: CONSIGNOR (SUPPLIER) ---
+LEGAL NAME: ${sellerOrg.name}
+TRADE NAME: ${sellerOrg.tradeName || sellerOrg.name}
+GSTIN: ${sellerOrg.gstin}
+FROM ADDRESS: ${sellerOrg.address}
+STATE CODE: 09 (Uttar Pradesh)
+
+--- PART A: CONSIGNEE (RECIPIENT) ---
+SHOP NAME: ${retailer.shopName}
+LEGAL/OWNER NAME: ${retailer.ownerName}
+GSTIN: ${retailer.gstin || "URP (Unregistered Retailer)"}
+PAN: ${retailer.panOrUdyam || "N/A"}
+TO ADDRESS: ${retailer.address}, ${retailer.city} - ${retailer.pincode}
+STATE CODE: 09 (Uttar Pradesh)
+
+--- ITEM BREAKDOWN ---
+${itemDetails.map((it, idx) => `${idx + 1}. ${it.productName} | HSN: ${it.hsnCode} | Qty: ${it.quantity} ${it.qtyUnit} | Taxable: ₹${it.taxableAmount} | CGST: ₹${it.cgstAmount} | SGST: ₹${it.sgstAmount}`).join("\n")}
+
+--- TOTAL CONSIGNMENT VALUATION ---
+TOTAL TAXABLE VALUE: ₹${taxableSubtotal.toFixed(2)}
+TOTAL CGST: ₹${cgstTotal.toFixed(2)}
+TOTAL SGST: ₹${sgstTotal.toFixed(2)}
+TOTAL IGST: ₹0.00
+TOTAL INVOICE VALUE: ₹${grandTotal.toFixed(2)}
+
+--- PART B: TRANSPORTATION DETAILS ---
+MODE: 1 - Road
+VEHICLE TYPE: Regular / Commercial LCV
+APPROX DISTANCE: 12 KM
+VEHICLE NO: UP-32-BZ-9021
+DISPATCH STATUS: Ready for NIC E-Way Bill Entry`;
+
+  return {
+    subOrderId: subOrder.id,
+    invoiceNumber,
+    invoiceDate,
+    supplyType: "Outward" as const,
+    subSupplyType: "Supply" as const,
+    docType: "Tax Invoice" as const,
+    transactionType: "Regular" as const,
+    sellerDetails: {
+      gstin: sellerOrg.gstin,
+      legalName: sellerOrg.name,
+      tradeName: sellerOrg.tradeName,
+      address: sellerOrg.address,
+      place: "Lucknow",
+      pincode: "226001",
+      stateCode: "09"
+    },
+    buyerDetails: {
+      gstin: retailer.gstin || "URP",
+      legalName: retailer.ownerName,
+      tradeName: retailer.shopName,
+      address: retailer.address,
+      place: retailer.city,
+      pincode: retailer.pincode,
+      stateCode: "09"
+    },
+    itemDetails,
+    totalTaxableValue: taxableSubtotal,
+    totalCgstAmount: cgstTotal,
+    totalSgstAmount: sgstTotal,
+    totalIgstAmount: 0,
+    totalInvoiceValue: grandTotal,
+    transporterDetails: {
+      transporterId: "TRANS_LOCAL_09",
+      transporterName: "Anagata Local Express",
+      transportMode: "1" as const,
+      vehicleNumber: "UP-32-BZ-9021",
+      approxDistanceKm: 12
+    },
+    formattedCopyText
   };
 }
 
@@ -775,6 +954,61 @@ class InMemoryDataStore {
           ]
         }
       ]
+    },
+    {
+      id: "prod_festive_combo",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      name: "Diwali Kirana Quick-Stock Mega Combo Bundle",
+      category: "Combos & Bundles",
+      brand: "Mega Wholesale Packs",
+      description: "Festive high-margin grouped combo pack containing 2 Cartons Parle-G, 1 Bundle Tata Tea Gold, and 1 Carton Britannia Good Day.",
+      hsnCode: "19053100",
+      gstRatePct: 18,
+      marginPct: 22.5,
+      imageUrl: "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500",
+      skus: [
+        {
+          id: "sku_diwali_combo",
+          productId: "prod_festive_combo",
+          skuCode: "COMBO-DIWALI-MEGA-01",
+          unitTitle: "Master Combo Bundle (4 Wholesale Packs)",
+          unitMultiplier: 4,
+          packMultiplier: 1,
+          cartonMultiplier: 4,
+          mrp: 5800,
+          wholesalePrice: 4750,
+          minimumOrderQuantity: 1,
+          stockQuantity: 50,
+          isActive: true,
+          isGroupedBundle: true,
+          bundleItems: [
+            {
+              productSkuId: "sku_parle_carton",
+              productName: "Parle-G Master Carton (72 pkts)",
+              skuCode: "PARLE-G-80G-CTN-72",
+              unitQuantity: 2
+            },
+            {
+              productSkuId: "sku_tata_tea_box",
+              productName: "Tata Tea Gold Wholesale Bundle (20 packs)",
+              skuCode: "TATA-GOLD-250G-BX-20",
+              unitQuantity: 1
+            },
+            {
+              productSkuId: "sku_goodday_carton",
+              productName: "Britannia Good Day Master Carton (48 packs)",
+              skuCode: "GD-BUTTER-120G-CTN-48",
+              unitQuantity: 1
+            }
+          ],
+          pricingSlabs: [
+            { minQuantity: 1, maxQuantity: 2, pricePerUnit: 4750, discountPct: 18.1, label: "1 - 2 Bundles (Base Combo Price)" },
+            { minQuantity: 3, maxQuantity: 5, pricePerUnit: 4550, discountPct: 21.5, label: "3 - 5 Bundles (₹200 Off/Bundle)" },
+            { minQuantity: 6, pricePerUnit: 4350, discountPct: 25.0, label: "6+ Bundles Festive Bonanza (₹400 Off/Bundle)" }
+          ]
+        }
+      ]
     }
   ];
 
@@ -922,6 +1156,377 @@ class InMemoryDataStore {
     cashInHand: 18400,
     incentiveEarned: 11535
   };
+
+  creditLines: DataStoreCreditLine[] = [
+    {
+      id: "crd_anagata_gupta",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      creditLimit: 60000,
+      currentDues: 12000,
+      availableCredit: 48000,
+      paymentTerm: "NET_7",
+      status: "ACTIVE",
+      creditGraceDays: 3,
+      notes: "Top-tier grocery retailer with verified GST and flawless payment record.",
+      updatedAt: "2026-09-01T10:00:00Z"
+    },
+    {
+      id: "crd_awadh_gupta",
+      organizationId: "org_awadh_beverages",
+      organizationName: "Awadh Beverages & Confectionery",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      creditLimit: 25000,
+      currentDues: 4500,
+      availableCredit: 20500,
+      paymentTerm: "NET_15",
+      status: "ACTIVE",
+      creditGraceDays: 5,
+      notes: "High beverage turnover during summer.",
+      updatedAt: "2026-09-02T11:00:00Z"
+    },
+    {
+      id: "crd_anagata_verma",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_verma_store",
+      retailerShopName: "Verma Brothers Wholesale & Retail",
+      creditLimit: 80000,
+      currentDues: 28500,
+      availableCredit: 51500,
+      paymentTerm: "NET_15",
+      status: "ACTIVE",
+      creditGraceDays: 7,
+      notes: "Large semi-wholesale store in Aminabad market.",
+      updatedAt: "2026-09-03T12:00:00Z"
+    },
+    {
+      id: "crd_awadh_verma",
+      organizationId: "org_awadh_beverages",
+      organizationName: "Awadh Beverages & Confectionery",
+      retailerId: "ret_verma_store",
+      retailerShopName: "Verma Brothers Wholesale & Retail",
+      creditLimit: 30000,
+      currentDues: 0,
+      availableCredit: 30000,
+      paymentTerm: "NET_7",
+      status: "ACTIVE",
+      creditGraceDays: 3,
+      notes: "Zero dues currently.",
+      updatedAt: "2026-09-04T09:00:00Z"
+    },
+    {
+      id: "crd_anagata_sharma",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_sharma_general",
+      retailerShopName: "Sharma General Provision Store",
+      creditLimit: 20000,
+      currentDues: 0,
+      availableCredit: 20000,
+      paymentTerm: "COD",
+      status: "ACTIVE",
+      creditGraceDays: 0,
+      notes: "Cash on delivery terms until 3 completed orders.",
+      updatedAt: "2026-09-05T14:00:00Z"
+    },
+    {
+      id: "crd_anagata_singh",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_singh_provisions",
+      retailerShopName: "Singh Daily Needs",
+      creditLimit: 35000,
+      currentDues: 6000,
+      availableCredit: 29000,
+      paymentTerm: "NET_7",
+      status: "ACTIVE",
+      creditGraceDays: 3,
+      notes: "Periodic reorders in Gomti Nagar.",
+      updatedAt: "2026-09-06T15:00:00Z"
+    }
+  ];
+
+  paymentVouchers: DataStorePaymentVoucher[] = [
+    {
+      id: "vch_001",
+      voucherNumber: "VCH-2026-0901",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      agentId: "usr_agent_1",
+      agentName: "Rahul Sharma",
+      amount: 12000,
+      paymentMode: "CASH",
+      referenceNumber: "CASH-REC-8901",
+      notes: "Partial payment for August consignments.",
+      status: "VERIFIED",
+      recordedAt: "2026-09-05T14:30:00Z",
+      verifiedAt: "2026-09-05T18:00:00Z"
+    },
+    {
+      id: "vch_002",
+      voucherNumber: "VCH-2026-0902",
+      retailerId: "ret_verma_store",
+      retailerShopName: "Verma Brothers Wholesale & Retail",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      agentId: "usr_agent_1",
+      agentName: "Rahul Sharma",
+      amount: 8500,
+      paymentMode: "CHEQUE",
+      referenceNumber: "CHQ-HDFC-992140",
+      bankName: "HDFC Bank Ltd",
+      chequeDate: "2026-09-04",
+      notes: "Account payee cheque handed over during beat visit.",
+      status: "VERIFIED",
+      recordedAt: "2026-09-04T17:20:00Z",
+      verifiedAt: "2026-09-05T11:00:00Z"
+    }
+  ];
+
+  ledgerEntries: DataStoreLedgerEntry[] = [
+    {
+      id: "led_001",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      date: "2026-08-20T10:00:00Z",
+      type: "INVOICE",
+      referenceId: "subord_aug_01",
+      referenceNumber: "INV-2026-AUG001",
+      description: "Dispatched 5 Cartons Parle-G & 3 Bundles Tata Tea",
+      debit: 24000,
+      credit: 0,
+      runningBalance: 24000
+    },
+    {
+      id: "led_002",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      date: "2026-09-05T14:30:00Z",
+      type: "PAYMENT_VOUCHER",
+      referenceId: "vch_001",
+      referenceNumber: "VCH-2026-0901",
+      description: "Cash payment collection by Agent Rahul Sharma",
+      debit: 0,
+      credit: 12000,
+      runningBalance: 12000
+    },
+    {
+      id: "led_003",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_verma_store",
+      retailerShopName: "Verma Brothers Wholesale & Retail",
+      date: "2026-08-28T12:00:00Z",
+      type: "INVOICE",
+      referenceId: "subord_aug_02",
+      referenceNumber: "INV-2026-AUG002",
+      description: "Bulk order dispatch 10 Corrugated Boxes Fortune Oil",
+      debit: 37000,
+      credit: 0,
+      runningBalance: 37000
+    },
+    {
+      id: "led_004",
+      organizationId: "org_anagata_fmcg",
+      organizationName: "Anagata FMCG Wholesale",
+      retailerId: "ret_verma_store",
+      retailerShopName: "Verma Brothers Wholesale & Retail",
+      date: "2026-09-04T17:20:00Z",
+      type: "PAYMENT_VOUCHER",
+      referenceId: "vch_002",
+      referenceNumber: "VCH-2026-0902",
+      description: "HDFC Cheque #992140 cleared",
+      debit: 0,
+      credit: 8500,
+      runningBalance: 28500
+    }
+  ];
+
+  // Helper: Atomic inventory reduction for both single SKUs and child SKUs of grouped combo bundles
+  deductStock(productSkuId: string, quantity: number): void {
+    for (const prod of this.products) {
+      const sku = prod.skus.find((s) => s.id === productSkuId);
+      if (sku) {
+        sku.stockQuantity = Math.max(0, sku.stockQuantity - quantity);
+
+        // If this is a grouped combo bundle, atomically deduct child SKUs
+        if (sku.isGroupedBundle && sku.bundleItems && sku.bundleItems.length > 0) {
+          for (const bundleItem of sku.bundleItems) {
+            const childDeduction = bundleItem.unitQuantity * quantity;
+            for (const childProd of this.products) {
+              const childSku = childProd.skus.find((cs) => cs.id === bundleItem.productSkuId);
+              if (childSku) {
+                childSku.stockQuantity = Math.max(0, childSku.stockQuantity - childDeduction);
+                break;
+              }
+            }
+          }
+        }
+        break;
+      }
+    }
+  }
+
+  // Helper: Record invoice debit to running ledger
+  recordLedgerDebit(
+    orgId: string,
+    orgName: string,
+    retailerId: string,
+    shopName: string,
+    subOrderId: string,
+    invoiceNumber: string,
+    amount: number
+  ): void {
+    const existingEntries = this.ledgerEntries.filter(
+      (l) => l.organizationId === orgId && l.retailerId === retailerId
+    );
+    const lastBalance = existingEntries.length > 0 ? existingEntries[existingEntries.length - 1].runningBalance : 0;
+    const runningBalance = Math.round((lastBalance + amount) * 100) / 100;
+
+    this.ledgerEntries.push({
+      id: `led_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      organizationId: orgId,
+      organizationName: orgName,
+      retailerId,
+      retailerShopName: shopName,
+      date: new Date().toISOString(),
+      type: "INVOICE",
+      referenceId: subOrderId,
+      referenceNumber: invoiceNumber,
+      description: `Dispatched B2B Order Invoice #${invoiceNumber}`,
+      debit: amount,
+      credit: 0,
+      runningBalance
+    });
+  }
+
+  // Helper: Record manual payment voucher & update ledger & credit line
+  recordPaymentVoucher(params: {
+    retailerId: string;
+    organizationId: string;
+    amount: number;
+    paymentMode: PaymentMode;
+    referenceNumber?: string;
+    bankName?: string;
+    chequeDate?: string;
+    notes?: string;
+    agentId?: string;
+    agentName?: string;
+  }): DataStorePaymentVoucher {
+    const retailer = this.retailers.find((r) => r.id === params.retailerId);
+    const org = this.organizations.find((o) => o.id === params.organizationId);
+    const retailerShopName = retailer ? retailer.shopName : "Retailer";
+    const organizationName = org ? org.name : "Seller";
+
+    const voucherNumber = `VCH-${Date.now().toString().slice(-6)}`;
+    const voucher: DataStorePaymentVoucher = {
+      id: `vch_${Date.now()}`,
+      voucherNumber,
+      retailerId: params.retailerId,
+      retailerShopName,
+      organizationId: params.organizationId,
+      organizationName,
+      agentId: params.agentId,
+      agentName: params.agentName,
+      amount: params.amount,
+      paymentMode: params.paymentMode,
+      referenceNumber: params.referenceNumber,
+      bankName: params.bankName,
+      chequeDate: params.chequeDate,
+      notes: params.notes,
+      status: "RECORDED",
+      recordedAt: new Date().toISOString()
+    };
+
+    this.paymentVouchers.unshift(voucher);
+
+    // Update seller-specific credit line
+    const creditLine = this.creditLines.find(
+      (c) => c.organizationId === params.organizationId && c.retailerId === params.retailerId
+    );
+    if (creditLine) {
+      creditLine.currentDues = Math.max(0, Math.round((creditLine.currentDues - params.amount) * 100) / 100);
+      creditLine.availableCredit = Math.round((creditLine.creditLimit - creditLine.currentDues) * 100) / 100;
+      if (creditLine.status === "CREDIT_HOLD" && creditLine.currentDues < creditLine.creditLimit) {
+        creditLine.status = "ACTIVE";
+      }
+      creditLine.updatedAt = new Date().toISOString();
+    }
+
+    // Update retailer overall dues
+    if (retailer) {
+      retailer.creditDues = Math.max(0, Math.round((retailer.creditDues - params.amount) * 100) / 100);
+    }
+
+    // Record credit in running ledger
+    const existingEntries = this.ledgerEntries.filter(
+      (l) => l.organizationId === params.organizationId && l.retailerId === params.retailerId
+    );
+    const lastBalance = existingEntries.length > 0 ? existingEntries[existingEntries.length - 1].runningBalance : 0;
+    const runningBalance = Math.max(0, Math.round((lastBalance - params.amount) * 100) / 100);
+
+    this.ledgerEntries.push({
+      id: `led_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      organizationId: params.organizationId,
+      organizationName,
+      retailerId: params.retailerId,
+      retailerShopName,
+      date: new Date().toISOString(),
+      type: "PAYMENT_VOUCHER",
+      referenceId: voucher.id,
+      referenceNumber: voucherNumber,
+      description: `Payment Voucher (${params.paymentMode}) ${params.referenceNumber ? `Ref: ${params.referenceNumber}` : ""}`,
+      debit: 0,
+      credit: params.amount,
+      runningBalance
+    });
+
+    return voucher;
+  }
+
+  // Helper: Retrieve complete dual-sided statement
+  getLedgerStatement(organizationId: string, retailerId: string) {
+    const org = this.organizations.find((o) => o.id === organizationId);
+    const retailer = this.retailers.find((r) => r.id === retailerId);
+    const creditLine = this.creditLines.find(
+      (c) => c.organizationId === organizationId && c.retailerId === retailerId
+    );
+
+    const entries = this.ledgerEntries.filter(
+      (l) => l.organizationId === organizationId && l.retailerId === retailerId
+    );
+
+    const totalInvoiced = Math.round(entries.reduce((acc, it) => acc + it.debit, 0) * 100) / 100;
+    const totalPaid = Math.round(entries.reduce((acc, it) => acc + it.credit, 0) * 100) / 100;
+    const outstandingBalance = creditLine ? creditLine.currentDues : Math.max(0, totalInvoiced - totalPaid);
+    const creditLimit = creditLine ? creditLine.creditLimit : 0;
+    const availableCredit = creditLine ? creditLine.availableCredit : 0;
+
+    return {
+      organizationId,
+      organizationName: org ? org.name : "Seller",
+      retailerId,
+      retailerShopName: retailer ? retailer.shopName : "Retailer",
+      creditLimit,
+      totalInvoiced,
+      totalPaid,
+      outstandingBalance,
+      availableCredit,
+      paymentTerm: creditLine ? creditLine.paymentTerm : "COD",
+      status: creditLine ? creditLine.status : "ACTIVE",
+      entries
+    };
+  }
 }
 
 export const store = new InMemoryDataStore();

@@ -88,8 +88,24 @@ export enum PaymentTerm {
   CASH_ON_DELIVERY = 'CASH_ON_DELIVERY',
   CREDIT_NET_7 = 'CREDIT_NET_7',
   CREDIT_NET_15 = 'CREDIT_NET_15',
+  CREDIT_NET_30 = 'CREDIT_NET_30',
+  CREDIT_NET_45 = 'CREDIT_NET_45',
+  WEEKLY_SETTLEMENT = 'WEEKLY_SETTLEMENT',
   UPI_ONLINE = 'UPI_ONLINE',
   BANK_NEFT = 'BANK_NEFT'
+}
+
+export enum CreditLineStatus {
+  ACTIVE = 'ACTIVE',
+  CREDIT_HOLD = 'CREDIT_HOLD',
+  UNDER_REVIEW = 'UNDER_REVIEW',
+  REJECTED = 'REJECTED'
+}
+
+export enum LedgerEntryType {
+  INVOICE = 'INVOICE',
+  PAYMENT_VOUCHER = 'PAYMENT_VOUCHER',
+  CREDIT_NOTE = 'CREDIT_NOTE'
 }
 
 export enum VisitPurpose {
@@ -104,7 +120,9 @@ export enum PaymentMode {
   CASH = 'CASH',
   UPI = 'UPI',
   CHEQUE = 'CHEQUE',
-  NEFT = 'NEFT'
+  NEFT = 'NEFT',
+  BANK_TRANSFER = 'BANK_TRANSFER',
+  DIRECT_SELLER_UPI = 'DIRECT_SELLER_UPI'
 }
 
 export enum FmcgCategory {

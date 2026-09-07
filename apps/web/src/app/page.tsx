@@ -30,6 +30,10 @@ import DeliveryOtpModal from "../components/orders/DeliveryOtpModal";
 import GstInvoiceModal from "../components/orders/GstInvoiceModal";
 import B2bCheckoutModal from "../components/orders/B2bCheckoutModal";
 import AgentCrmDashboard from "../components/crm/AgentCrmDashboard";
+import SellerProductStudio from "../components/seller/SellerProductStudio";
+import SellerCreditManagement from "../components/seller/SellerCreditManagement";
+import EWayBillNicModal from "../components/orders/EWayBillNicModal";
+import OpenStreetMapRoute from "../components/maps/OpenStreetMapRoute";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
@@ -37,10 +41,13 @@ export default function Home() {
   const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("RETAILER");
   const [loading, setLoading] = useState(false);
 
-  // Seller Data
+  // Seller Data & Merchandising Sub-Tabs
+  const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "ROI">("ORDERS");
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [selectedSubOrder, setSelectedSubOrder] = useState<any | null>(null);
+  const [selectedEWaySubOrder, setSelectedEWaySubOrder] = useState<string | null>(null);
   const [isOtpModalOpen, setIsOtpModalOpen] = useState(false);
+  const [isEWayModalOpen, setIsEWayModalOpen] = useState(false);
 
   // Admin Data
   const [pendingRetailers, setPendingRetailers] = useState<any[]>([]);
@@ -612,97 +619,159 @@ export default function Home() {
 
         {/* ================= 2. FIELD SALES AGENT SFA CRM VIEW ================= */}
         {activeRole === "AGENT" && (
-          <AgentCrmDashboard apiBase={API_BASE} agentId="usr_agent_1" />
+          <div className="space-y-6">
+            <OpenStreetMapRoute apiBase={API_BASE} beatId="beat_hazratganj_mon" />
+            <AgentCrmDashboard apiBase={API_BASE} agentId="usr_agent_1" />
+          </div>
         )}
 
         {/* ================= 3. WHOLESALER / BRAND VIEW ================= */}
         {activeRole === "SELLER" && (
-          <div className="space-y-8">
-            <SavingsCalculator />
+          <div className="space-y-6">
+            {/* Wholesaler Section Sub-Tabs */}
+            <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-xl max-w-fit overflow-x-auto border border-slate-200/80">
+              <button
+                onClick={() => setSellerTab("ORDERS")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
+                  sellerTab === "ORDERS" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Orders & Consignments
+              </button>
+              <button
+                onClick={() => setSellerTab("PRODUCTS")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
+                  sellerTab === "PRODUCTS" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Product & Combo Studio
+              </button>
+              <button
+                onClick={() => setSellerTab("CREDIT")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
+                  sellerTab === "CREDIT" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                Retailer Credit & Ledgers
+              </button>
+              <button
+                onClick={() => setSellerTab("ROI")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
+                  sellerTab === "ROI" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                ROI & Savings Simulator
+              </button>
+            </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-indigo-600" />
-                    Incoming B2B Sub-Orders (Anagata FMCG Wholesale)
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Orders routed directly to your warehouse with 0% platform commission.
-                  </p>
+            {sellerTab === "PRODUCTS" && (
+              <SellerProductStudio apiBase={API_BASE} organizationId="org_anagata_fmcg" />
+            )}
+
+            {sellerTab === "CREDIT" && (
+              <SellerCreditManagement apiBase={API_BASE} organizationId="org_anagata_fmcg" />
+            )}
+
+            {sellerTab === "ROI" && (
+              <SavingsCalculator />
+            )}
+
+            {sellerTab === "ORDERS" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                      <Building2 className="w-5 h-5 text-indigo-600" />
+                      Incoming B2B Sub-Orders (Anagata FMCG Wholesale)
+                    </h3>
+                    <p className="text-xs text-slate-500">
+                      Orders routed directly to your warehouse with 0% platform commission.
+                    </p>
+                  </div>
+                  <button onClick={loadData} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg">
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
                 </div>
-                <button onClick={loadData} className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg">
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-              </div>
 
-              <div className="divide-y divide-slate-200">
-                {sellerOrders.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-slate-500">No sub-orders received yet.</div>
-                ) : (
-                  sellerOrders.map((order) => (
-                    <div key={order.id} className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                      <div>
+                <div className="divide-y divide-slate-200">
+                  {sellerOrders.length === 0 ? (
+                    <div className="p-8 text-center text-sm text-slate-500">No sub-orders received yet.</div>
+                  ) : (
+                    sellerOrders.map((order) => (
+                      <div key={order.id} className="p-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-slate-900 text-base">{order.retailerShopName}</span>
+                            <span
+                              className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                                order.status === "DELIVERED"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : order.status === "DISPATCHED"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : "bg-amber-100 text-amber-800"
+                              }`}
+                            >
+                              {order.status}
+                            </span>
+                          </div>
+                          <div className="text-xs text-slate-600 mt-1">
+                            Master Order: #{order.masterOrderNumber} • Grand Total:{" "}
+                            <span className="font-bold text-slate-900">₹{order.grandTotal?.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="text-xs text-slate-500 mt-0.5">
+                            Retailer WhatsApp: {order.retailerPhone} • Payment: {order.paymentTerm || "NET_7"}
+                          </div>
+                        </div>
+
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900 text-base">{order.retailerShopName}</span>
-                          <span
-                            className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                              order.status === "DELIVERED"
-                                ? "bg-emerald-100 text-emerald-800"
-                                : order.status === "DISPATCHED"
-                                ? "bg-blue-100 text-blue-800"
-                                : "bg-amber-100 text-amber-800"
-                            }`}
-                          >
-                            {order.status}
-                          </span>
-                        </div>
-                        <div className="text-xs text-slate-600 mt-1">
-                          Master Order: #{order.masterOrderNumber} • Grand Total:{" "}
-                          <span className="font-bold text-slate-900">₹{order.grandTotal?.toLocaleString("en-IN")}</span>
-                        </div>
-                        <div className="text-xs text-slate-500 mt-0.5">
-                          Retailer WhatsApp: {order.retailerPhone} • Payment: {order.paymentTerm || "NET_7"}
-                        </div>
-                      </div>
+                          {order.status === "RECEIVED" && (
+                            <button
+                              onClick={() => handleDispatch(order.id)}
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
+                            >
+                              <Truck className="w-3.5 h-3.5" />
+                              Dispatch & Send OTP
+                            </button>
+                          )}
 
-                      <div className="flex items-center gap-2">
-                        {order.status === "RECEIVED" && (
-                          <button
-                            onClick={() => handleDispatch(order.id)}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
-                          >
-                            <Truck className="w-3.5 h-3.5" />
-                            Dispatch & Send OTP
-                          </button>
-                        )}
+                          {order.status === "DISPATCHED" && (
+                            <button
+                              onClick={() => {
+                                setSelectedSubOrder(order);
+                                setIsOtpModalOpen(true);
+                              }}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
+                            >
+                              <KeyRound className="w-3.5 h-3.5" />
+                              Verify Retailer OTP
+                            </button>
+                          )}
 
-                        {order.status === "DISPATCHED" && (
                           <button
                             onClick={() => {
-                              setSelectedSubOrder(order);
-                              setIsOtpModalOpen(true);
+                              setSelectedEWaySubOrder(order.id);
+                              setIsEWayModalOpen(true);
                             }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition"
+                            className="px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-lg transition flex items-center gap-1"
                           >
-                            <KeyRound className="w-3.5 h-3.5" />
-                            Verify Retailer OTP
+                            <FileText className="w-3.5 h-3.5" />
+                            E-Way Bill NIC
                           </button>
-                        )}
 
-                        <button
-                          onClick={() => handleViewInvoice(order.id)}
-                          className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition flex items-center gap-1"
-                        >
-                          <Receipt className="w-3.5 h-3.5" />
-                          GST Invoice
-                        </button>
+                          <button
+                            onClick={() => handleViewInvoice(order.id)}
+                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition flex items-center gap-1"
+                          >
+                            <Receipt className="w-3.5 h-3.5" />
+                            GST Invoice
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))
-                )}
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -794,6 +863,13 @@ export default function Home() {
         isOpen={isInvoiceModalOpen}
         onClose={() => setIsInvoiceModalOpen(false)}
         invoice={selectedInvoice}
+      />
+
+      <EWayBillNicModal
+        apiBase={API_BASE}
+        subOrderId={selectedEWaySubOrder || ""}
+        isOpen={isEWayModalOpen}
+        onClose={() => setIsEWayModalOpen(false)}
       />
     </div>
   );

@@ -10,6 +10,8 @@ import {
   SubscriptionTier,
   LeadStage,
   PaymentTerm,
+  CreditLineStatus,
+  LedgerEntryType,
   VisitPurpose,
   PaymentMode,
   FmcgCategory
@@ -92,12 +94,21 @@ export interface PricingSlab {
   discountPct: number;
 }
 
+export interface GroupedProductItem {
+  productSkuId: string;
+  productName: string;
+  skuCode: string;
+  unitQuantity: number;
+}
+
 export interface ProductSku {
   id: string;
   productId: string;
   skuCode: string;
   unitTitle: string;
   unitMultiplier: number;
+  packMultiplier?: number;
+  cartonMultiplier?: number;
   mrp: number;
   wholesalePrice: number;
   pricingSlabs?: PricingSlab[];
@@ -105,6 +116,36 @@ export interface ProductSku {
   minimumOrderQuantity: number; // MOQ
   stockQuantity: number;
   isActive: boolean;
+  isGroupedBundle?: boolean;
+  bundleItems?: GroupedProductItem[];
+}
+
+export interface SellerProductCreateInput {
+  organizationId: string;
+  name: string;
+  category: string;
+  subCategory?: string;
+  brand: string;
+  description?: string;
+  hsnCode: string;
+  gstRatePct: number;
+  marginPct?: number;
+  imageUrl?: string;
+  tags?: string[];
+  skus: Array<{
+    skuCode: string;
+    unitTitle: string;
+    unitMultiplier: number;
+    packMultiplier?: number;
+    cartonMultiplier?: number;
+    mrp: number;
+    wholesalePrice: number;
+    minimumOrderQuantity: number;
+    stockQuantity: number;
+    pricingSlabs?: PricingSlab[];
+    isGroupedBundle?: boolean;
+    bundleItems?: GroupedProductItem[];
+  }>;
 }
 
 export interface Product {
@@ -343,4 +384,121 @@ export interface EvolutionApiMessagePayload {
   number: string;
   text: string;
 }
+
+export interface SellerRetailerCreditLine {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  retailerId: string;
+  retailerShopName?: string;
+  creditLimit: number;
+  currentDues: number;
+  availableCredit: number;
+  paymentTerm: PaymentTerm;
+  status: CreditLineStatus;
+  creditGraceDays: number;
+  notes?: string;
+  updatedAt: string;
+}
+
+export interface PaymentVoucherRecord {
+  id: string;
+  voucherNumber: string;
+  retailerId: string;
+  retailerShopName: string;
+  organizationId: string;
+  organizationName: string;
+  agentId?: string;
+  agentName?: string;
+  amount: number;
+  paymentMode: PaymentMode;
+  referenceNumber?: string;
+  bankName?: string;
+  chequeDate?: string;
+  notes?: string;
+  status: 'RECORDED' | 'VERIFIED' | 'REJECTED';
+  recordedAt: string;
+  verifiedAt?: string;
+}
+
+export interface LedgerStatementEntry {
+  id: string;
+  date: string;
+  type: LedgerEntryType;
+  referenceId: string;
+  referenceNumber: string;
+  description: string;
+  debit: number;
+  credit: number;
+  runningBalance: number;
+}
+
+export interface SellerRetailerLedgerStatement {
+  organizationId: string;
+  organizationName: string;
+  retailerId: string;
+  retailerShopName: string;
+  creditLimit: number;
+  totalInvoiced: number;
+  totalPaid: number;
+  outstandingBalance: number;
+  availableCredit: number;
+  entries: LedgerStatementEntry[];
+}
+
+export interface EWayBillNicPayload {
+  subOrderId: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  supplyType: 'Outward' | 'Inward';
+  subSupplyType: 'Supply';
+  docType: 'Tax Invoice';
+  transactionType: 'Regular';
+  sellerDetails: {
+    gstin: string;
+    legalName: string;
+    tradeName?: string;
+    address: string;
+    place: string;
+    pincode: string;
+    stateCode: string;
+  };
+  buyerDetails: {
+    gstin: string;
+    legalName: string;
+    tradeName?: string;
+    address: string;
+    place: string;
+    pincode: string;
+    stateCode: string;
+  };
+  itemDetails: Array<{
+    productName: string;
+    productDesc: string;
+    hsnCode: string;
+    quantity: number;
+    qtyUnit: string;
+    taxableAmount: number;
+    cgstRate: number;
+    cgstAmount: number;
+    sgstRate: number;
+    sgstAmount: number;
+    igstRate: number;
+    igstAmount: number;
+  }>;
+  totalTaxableValue: number;
+  totalCgstAmount: number;
+  totalSgstAmount: number;
+  totalIgstAmount: number;
+  totalInvoiceValue: number;
+  transporterDetails?: {
+    transporterId?: string;
+    transporterName?: string;
+    transportMode: '1' | '2' | '3' | '4';
+    vehicleNumber?: string;
+    approxDistanceKm: number;
+  };
+  formattedCopyText: string;
+}
+
 

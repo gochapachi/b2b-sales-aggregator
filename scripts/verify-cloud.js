@@ -184,12 +184,12 @@ async function run() {
     subOrderId: subOrderId,
   });
   assert(
-    dispatchRes.statusCode === 200 && dispatchRes.data.subOrder.status === "DISPATCHED",
+    dispatchRes.statusCode === 200 && dispatchRes.data?.subOrder?.status === "DISPATCHED",
     "10. Order Dispatch & Transactional WhatsApp Alert Dispatch",
-    `HTTP ${dispatchRes.statusCode} | SubOrder Status: ${dispatchRes.data.subOrder.status} | Delivery OTP Generated: ${dispatchRes.data.subOrder.deliveryOtp}`
+    `HTTP ${dispatchRes.statusCode} | SubOrder Status: ${dispatchRes.data?.subOrder?.status} | Delivery OTP Generated: ${dispatchRes.data?.subOrder?.deliveryOtp}`
   );
 
-  const generatedOtp = dispatchRes.data.subOrder.deliveryOtp;
+  const generatedOtp = dispatchRes.data?.subOrder?.deliveryOtp;
 
   // 11. Invalid OTP Verification Rejection
   const invalidOtpRes = await request("POST", `${API_BASE}/api/delivery/verify-otp`, {
@@ -197,9 +197,9 @@ async function run() {
     enteredOtp: "0000",
   });
   assert(
-    invalidOtpRes.statusCode === 400 && invalidOtpRes.data.error === "Invalid Delivery OTP",
+    invalidOtpRes.statusCode === 400 && invalidOtpRes.data?.error === "Invalid Delivery OTP",
     "11. Proof-of-Delivery OTP Verification (Invalid OTP Rejected)",
-    `HTTP ${invalidOtpRes.statusCode} | Error: "${invalidOtpRes.data.message}"`
+    `HTTP ${invalidOtpRes.statusCode} | Error: "${invalidOtpRes.data?.message}"`
   );
 
   // 12. Valid OTP Verification & Delivery Confirmation
@@ -208,9 +208,9 @@ async function run() {
     enteredOtp: generatedOtp,
   });
   assert(
-    validOtpRes.statusCode === 200 && validOtpRes.data.subOrder.status === "DELIVERED",
+    validOtpRes.statusCode === 200 && validOtpRes.data?.subOrder?.status === "DELIVERED",
     "12. Proof-of-Delivery OTP Verification (Valid OTP Approved -> DELIVERED)",
-    `HTTP ${validOtpRes.statusCode} | Status: ${validOtpRes.data.subOrder.status} | Transit Duration: ${validOtpRes.data.subOrder.transitDurationMinutes} min`
+    `HTTP ${validOtpRes.statusCode} | Status: ${validOtpRes.data?.subOrder?.status} | Transit Duration: ${validOtpRes.data?.subOrder?.transitDurationMinutes} min`
   );
 
   // 13. Seller ROI Simulator
@@ -275,6 +275,56 @@ async function run() {
     perfRes.statusCode === 200 && perfRes.data.agentPerformance && perfRes.data.agentPerformance.monthlyRevenueTarget > 0,
     "19. Sales Force Automation: Revenue Targets & Strike Rate %",
     `HTTP ${perfRes.statusCode} | Monthly Target: ₹${perfRes.data.agentPerformance?.monthlyRevenueTarget} | Strike Rate: ${perfRes.data.agentPerformance?.strikeRatePct}% | Cash in Hand: ₹${perfRes.data.agentPerformance?.cashInHand}`
+  );
+
+  // 20. Seller Merchandising Studio: Wholesale SKUs & Bundles
+  const sellerProdRes = await request("GET", `${API_BASE}/api/seller/products?organizationId=org_anagata_fmcg`);
+  assert(
+    sellerProdRes.statusCode === 200 && Array.isArray(sellerProdRes.data.products) && sellerProdRes.data.products.length > 0,
+    "20. Seller Merchandising Studio (/api/seller/products)",
+    `HTTP ${sellerProdRes.statusCode} | Products Count: ${sellerProdRes.data.products?.length} | Example: ${sellerProdRes.data.products?.[0]?.name}`
+  );
+
+  // 21. Grouped Product / Combo Bundle with Packaging Multipliers
+  const comboProduct = sellerProdRes.data.products?.find((p) => p.id === "prod_festive_combo");
+  const comboSku = comboProduct?.skus?.find((s) => s.isGroupedBundle);
+  assert(
+    sellerProdRes.statusCode === 200 && comboSku && comboSku.bundleItems?.length >= 2,
+    "21. Master Combo Bundle & Multi-Tier Packaging Multipliers",
+    `Combo: "${comboProduct?.name}" | Bundled Child Items: ${comboSku?.bundleItems?.length} items | Carton Multiplier: ${comboSku?.cartonMultiplier}`
+  );
+
+  // 22. Decentralized Seller-Controlled Retailer Credit Lines
+  const creditLinesRes = await request("GET", `${API_BASE}/api/seller/credit-lines?organizationId=org_anagata_fmcg`);
+  assert(
+    creditLinesRes.statusCode === 200 && Array.isArray(creditLinesRes.data.creditLines) && creditLinesRes.data.creditLines.length > 0,
+    "22. Decentralized Seller-Retailer Credit Lines (/api/seller/credit-lines)",
+    `HTTP ${creditLinesRes.statusCode} | Credit Lines: ${creditLinesRes.data.creditLines?.length} pairs | Gupta Kirana Limit: ₹${creditLinesRes.data.creditLines?.[0]?.creditLimit}`
+  );
+
+  // 23. Zero-Gateway Payment Tracking & Dual-Sided Running Ledger
+  const ledgerRes = await request("GET", `${API_BASE}/api/ledger/statement?organizationId=org_anagata_fmcg&retailerId=ret_gupta_kirana`);
+  assert(
+    ledgerRes.statusCode === 200 && ledgerRes.data.statement && Array.isArray(ledgerRes.data.statement.entries),
+    "23. Dual-Sided Running Ledger Reconciliation (/api/ledger/statement)",
+    `HTTP ${ledgerRes.statusCode} | Total Invoiced: ₹${ledgerRes.data.statement?.totalInvoiced} | Total Paid: ₹${ledgerRes.data.statement?.totalPaid} | Balance: ₹${ledgerRes.data.statement?.outstandingBalance}`
+  );
+
+  // 24. Government NIC Portal E-Way Bill Copy-Paste Payload
+  const ewayRes = await request("GET", `${API_BASE}/api/orders/eway-bill-payload/${subOrderId}`);
+  assert(
+    ewayRes.statusCode === 200 && ewayRes.data.payload && ewayRes.data.payload.formattedCopyText?.includes("GOVERNMENT OF INDIA E-WAY BILL SYSTEM"),
+    "24. Government NIC Portal E-Way Bill Copy Payload (/api/orders/eway-bill-payload)",
+    `HTTP ${ewayRes.statusCode} | Doc No: ${ewayRes.data.payload?.invoiceNumber} | Supply Type: ${ewayRes.data.payload?.supplyType} | Vehicle: ${ewayRes.data.payload?.transporterDetails?.vehicleNumber}`
+  );
+
+  // 25. OpenStreetMap (OSM) Reverse Geocoding & Beat Route
+  const osmGeoRes = await request("GET", `${API_BASE}/api/geo/reverse?lat=26.8467&lng=80.9462`);
+  const osmRouteRes = await request("GET", `${API_BASE}/api/geo/beat-route/beat_hazratganj_mon`);
+  assert(
+    osmGeoRes.statusCode === 200 && osmGeoRes.data.displayName && osmRouteRes.statusCode === 200 && osmRouteRes.data.mapProvider?.includes("OpenStreetMap"),
+    "25. OpenStreetMap Geocoding & Beat Waypoints (/api/geo/reverse & beat-route)",
+    `HTTP ${osmGeoRes.statusCode} | Geo: "${osmGeoRes.data.displayName?.slice(0, 40)}..." | Route Provider: ${osmRouteRes.data.mapProvider} (${osmRouteRes.data.totalStops} stops)`
   );
 
   console.log("\n===============================================================");

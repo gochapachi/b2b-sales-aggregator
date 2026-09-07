@@ -7,12 +7,19 @@ import {
   DataStoreMasterOrder,
   DataStoreSubOrder,
   generateGstInvoice,
+  generateEWayBillPayload,
   LeadStage,
   PaymentTerm,
   PaymentMode,
+  CreditLineStatus,
   VisitPurpose,
   DataStoreCrmNote,
-  DataStoreCrmPayment
+  DataStoreCrmPayment,
+  DataStoreProduct,
+  DataStoreProductSku,
+  DataStoreCreditLine,
+  DataStorePaymentVoucher,
+  DataStoreLedgerEntry
 } from "./store/data-store";
 import { evolutionService } from "./services/evolution.service";
 import { calculateSellerSavings } from "./services/roi.service";
@@ -460,21 +467,56 @@ async function startServer() {
       }
     }
 
-    // Calculate total order amount
+    // Calculate total order amount and validate seller-specific credit lines
+    const isCreditOrder = paymentTerm.startsWith("NET_") || paymentTerm === "WEEKLY_SETTLEMENT";
     let tentativeGrandTotal = 0;
-    for (const orderItems of vendorItemsMap.values()) {
-      const subtotal = orderItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0);
-      const taxAmount = orderItems.reduce((acc, it) => acc + it.taxAmount, 0);
-      tentativeGrandTotal += subtotal + taxAmount;
+
+    for (const [orgId, orderItems] of vendorItemsMap.entries()) {
+      const org = store.organizations.find((o) => o.id === orgId)!;
+      const vendorTotal = Math.round(
+        orderItems.reduce((acc, it) => acc + it.totalPrice, 0) * 100
+      ) / 100;
+      tentativeGrandTotal += vendorTotal;
+
+      if (isCreditOrder) {
+        let creditLine = store.creditLines.find(
+          (c) => c.organizationId === orgId && c.retailerId === retailer.id
+        );
+
+        if (creditLine) {
+          if (creditLine.status === "CREDIT_HOLD") {
+            return reply.status(400).send({
+              error: `Credit hold is active for seller "${org.name}". Please settle outstanding balance before placing new credit orders.`
+            });
+          }
+          if (vendorTotal > creditLine.availableCredit) {
+            return reply.status(400).send({
+              error: `Credit limit exceeded for seller "${org.name}". Available credit: ₹${creditLine.availableCredit.toLocaleString("en-IN")}, requested order: ₹${vendorTotal.toLocaleString("en-IN")}.`
+            });
+          }
+        } else if (retailer.creditLimit && retailer.creditLimit > 0) {
+          creditLine = {
+            id: `crd_${orgId}_${retailer.id}`,
+            organizationId: orgId,
+            organizationName: org.name,
+            retailerId: retailer.id,
+            retailerShopName: retailer.shopName,
+            creditLimit: retailer.creditLimit,
+            currentDues: 0,
+            availableCredit: retailer.creditLimit,
+            paymentTerm: paymentTerm as any,
+            status: "ACTIVE",
+            creditGraceDays: 3,
+            updatedAt: new Date().toISOString()
+          };
+          store.creditLines.push(creditLine);
+        }
+      }
     }
 
-    // Validate Credit Limit for Net-7 and Net-15 terms
-    if (paymentTerm === "NET_7" || paymentTerm === "NET_15") {
-      const maxCreditAvailable = retailer.creditLimit - retailer.creditDues;
-      if (tentativeGrandTotal > maxCreditAvailable && maxCreditAvailable > 0) {
-        // Provide warning or cap if strictly exceeded
-      }
-      retailer.creditDues = Math.round((retailer.creditDues + tentativeGrandTotal) * 100) / 100;
+    // Deduct inventory atomically (including child SKUs for grouped bundles)
+    for (const item of items) {
+      store.deductStock(item.productSkuId, item.quantity);
     }
 
     // Build Master Order and Sub-Orders
@@ -489,6 +531,8 @@ async function startServer() {
         ? new Date(now.getTime() + 7 * 86400000).toISOString().split("T")[0]
         : paymentTerm === "NET_15"
         ? new Date(now.getTime() + 15 * 86400000).toISOString().split("T")[0]
+        : paymentTerm === "NET_30"
+        ? new Date(now.getTime() + 30 * 86400000).toISOString().split("T")[0]
         : undefined;
 
     for (const [orgId, orderItems] of vendorItemsMap.entries()) {
@@ -498,6 +542,19 @@ async function startServer() {
       const subtotal = Math.round(orderItems.reduce((acc, it) => acc + it.unitPrice * it.quantity, 0) * 100) / 100;
       const taxAmount = Math.round(orderItems.reduce((acc, it) => acc + it.taxAmount, 0) * 100) / 100;
       const grandTotal = Math.round((subtotal + taxAmount) * 100) / 100;
+
+      // Update decentralized credit line if applicable
+      if (isCreditOrder) {
+        const creditLine = store.creditLines.find(
+          (c) => c.organizationId === orgId && c.retailerId === retailer.id
+        );
+        if (creditLine) {
+          creditLine.currentDues = Math.round((creditLine.currentDues + grandTotal) * 100) / 100;
+          creditLine.availableCredit = Math.max(0, Math.round((creditLine.creditLimit - creditLine.currentDues) * 100) / 100);
+          creditLine.updatedAt = new Date().toISOString();
+        }
+        retailer.creditDues = Math.round((retailer.creditDues + grandTotal) * 100) / 100;
+      }
 
       // Cryptographically random 4-digit Delivery OTP
       const deliveryOtp = Math.floor(1000 + Math.random() * 9000).toString();
@@ -550,7 +607,7 @@ async function startServer() {
         grandTotal,
         status: "RECEIVED",
         paymentTerm: paymentTerm as PaymentTerm,
-        paymentStatus: paymentTerm === "COD" || paymentTerm === "NET_7" || paymentTerm === "NET_15" ? "UNPAID" : "PAID",
+        paymentStatus: paymentTerm === "COD" || isCreditOrder ? "UNPAID" : "PAID",
         creditDueDate,
         deliveryOtp,
         trackingHistory,
@@ -561,6 +618,17 @@ async function startServer() {
       // Attach GST Tax Invoice to Sub-Order
       subOrder.invoice = generateGstInvoice(subOrder, { orderNumber } as any, org, retailer);
       subOrders.push(subOrder);
+
+      // Record invoice debit in running ledger
+      store.recordLedgerDebit(
+        org.id,
+        org.name,
+        retailer.id,
+        retailer.shopName,
+        subOrder.id,
+        subOrder.invoice.invoiceNumber,
+        grandTotal
+      );
     }
 
     const totalAmount = Math.round(subOrders.reduce((acc, so) => acc + so.grandTotal, 0) * 100) / 100;
@@ -657,6 +725,27 @@ async function startServer() {
     }
 
     return reply.status(404).send({ error: "Invoice for sub-order not found" });
+  });
+
+  // 9b. Government NIC Portal E-Way Bill Copy-Paste Payload
+  server.get("/api/orders/eway-bill-payload/:subOrderId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { subOrderId } = req.params as any;
+
+    for (const mo of store.masterOrders) {
+      for (const so of mo.subOrders) {
+        if (so.id === subOrderId) {
+          const org = store.organizations.find((o) => o.id === so.organizationId)!;
+          const ret = store.retailers.find((r) => r.id === mo.retailerId)!;
+          if (!so.invoice) {
+            so.invoice = generateGstInvoice(so, mo, org, ret);
+          }
+          const payload = generateEWayBillPayload(so, org, ret);
+          return { success: true, payload };
+        }
+      }
+    }
+
+    return reply.status(404).send({ error: "Sub-order not found for E-Way Bill payload generation" });
   });
 
   // 10. Delivery & 4-Digit OTP Hand-Off
@@ -1056,6 +1145,338 @@ async function startServer() {
       ordersBooked: ordersPlaced,
       avgDeliveryTransitMinutes: avgTransitDuration,
       onTimeDeliverySlaPct: 96.4
+    };
+  });
+
+  // 13. Seller Merchandising & Product Studio Endpoints
+  server.get("/api/seller/products", async (req: FastifyRequest, reply: FastifyReply) => {
+    const query = req.query as any;
+    const organizationId = query.organizationId || "org_anagata_fmcg";
+    const sellerProducts = store.products.filter((p) => p.organizationId === organizationId);
+    return { success: true, products: sellerProducts };
+  });
+
+  server.post("/api/seller/products", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const {
+      organizationId,
+      name,
+      category,
+      brand,
+      description = "",
+      hsnCode = "19053100",
+      gstRatePct = 18,
+      marginPct = 20,
+      imageUrl = "https://images.unsplash.com/photo-1542838132-92c53300491e?w=500",
+      skus = []
+    } = body;
+
+    if (!organizationId || !name || !category || !brand) {
+      return reply.status(400).send({ error: "Missing required fields: organizationId, name, category, and brand are required" });
+    }
+
+    const org = store.organizations.find((o) => o.id === organizationId);
+    const orgName = org ? org.name : "Seller";
+
+    const productId = `prod_${Date.now()}`;
+    const builtSkus: DataStoreProductSku[] = skus.map((s: any, idx: number) => ({
+      id: s.id || `sku_${Date.now()}_${idx}`,
+      productId,
+      skuCode: s.skuCode || `SKU-${Date.now().toString().slice(-4)}-${idx}`,
+      unitTitle: s.unitTitle || "Wholesale Pack",
+      unitMultiplier: Number(s.unitMultiplier) || 1,
+      packMultiplier: s.packMultiplier ? Number(s.packMultiplier) : undefined,
+      cartonMultiplier: s.cartonMultiplier ? Number(s.cartonMultiplier) : undefined,
+      mrp: Number(s.mrp) || 100,
+      wholesalePrice: Number(s.wholesalePrice) || 80,
+      minimumOrderQuantity: Number(s.minimumOrderQuantity) || 1,
+      stockQuantity: Number(s.stockQuantity) || 100,
+      isActive: s.isActive !== false,
+      isGroupedBundle: Boolean(s.isGroupedBundle),
+      bundleItems: s.bundleItems || [],
+      pricingSlabs: s.pricingSlabs || [
+        { minQuantity: Number(s.minimumOrderQuantity) || 1, pricePerUnit: Number(s.wholesalePrice) || 80, discountPct: 20, label: "Base Wholesale" }
+      ]
+    }));
+
+    const newProduct: DataStoreProduct = {
+      id: productId,
+      organizationId,
+      organizationName: orgName,
+      name,
+      category,
+      brand,
+      description,
+      hsnCode,
+      gstRatePct: Number(gstRatePct),
+      marginPct: Number(marginPct),
+      imageUrl,
+      skus: builtSkus
+    };
+
+    store.products.unshift(newProduct);
+    return { success: true, message: "Product SKU created in Seller Studio", product: newProduct };
+  });
+
+  server.put("/api/seller/products/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const body = req.body as any;
+
+    const product = store.products.find((p) => p.id === id);
+    if (!product) {
+      return reply.status(404).send({ error: "Product not found" });
+    }
+
+    if (body.name) product.name = body.name;
+    if (body.category) product.category = body.category;
+    if (body.brand) product.brand = body.brand;
+    if (body.description !== undefined) product.description = body.description;
+    if (body.hsnCode) product.hsnCode = body.hsnCode;
+    if (body.gstRatePct !== undefined) product.gstRatePct = Number(body.gstRatePct);
+    if (body.marginPct !== undefined) product.marginPct = Number(body.marginPct);
+    if (body.imageUrl) product.imageUrl = body.imageUrl;
+    if (body.skus && Array.isArray(body.skus)) {
+      product.skus = body.skus;
+    }
+
+    return { success: true, message: "Product updated successfully", product };
+  });
+
+  server.delete("/api/seller/products/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const productIdx = store.products.findIndex((p) => p.id === id);
+    if (productIdx === -1) {
+      return reply.status(404).send({ error: "Product not found" });
+    }
+
+    const removed = store.products.splice(productIdx, 1)[0];
+    return { success: true, message: `Product "${removed.name}" archived successfully` };
+  });
+
+  // 14. Decentralized Seller-Retailer Credit Line Management
+  server.get("/api/seller/credit-lines", async (req: FastifyRequest, reply: FastifyReply) => {
+    const query = req.query as any;
+    const organizationId = query.organizationId || "org_anagata_fmcg";
+    const creditLines = store.creditLines.filter((c) => c.organizationId === organizationId);
+    return { success: true, creditLines };
+  });
+
+  server.post("/api/seller/credit-lines", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const {
+      organizationId,
+      retailerId,
+      creditLimit,
+      paymentTerm = "NET_7",
+      creditGraceDays = 3,
+      notes = ""
+    } = body;
+
+    if (!organizationId || !retailerId || creditLimit === undefined) {
+      return reply.status(400).send({ error: "organizationId, retailerId, and creditLimit are required" });
+    }
+
+    const org = store.organizations.find((o) => o.id === organizationId);
+    const ret = store.retailers.find((r) => r.id === retailerId);
+    if (!org) return reply.status(404).send({ error: "Seller organization not found" });
+    if (!ret) return reply.status(404).send({ error: "Retailer not found" });
+
+    let line = store.creditLines.find((c) => c.organizationId === organizationId && c.retailerId === retailerId);
+    const numLimit = Number(creditLimit);
+
+    if (line) {
+      line.creditLimit = numLimit;
+      line.availableCredit = Math.max(0, Math.round((numLimit - line.currentDues) * 100) / 100);
+      line.paymentTerm = paymentTerm as PaymentTerm;
+      line.creditGraceDays = Number(creditGraceDays);
+      if (notes) line.notes = notes;
+      line.updatedAt = new Date().toISOString();
+    } else {
+      line = {
+        id: `crd_${organizationId}_${retailerId}`,
+        organizationId,
+        organizationName: org.name,
+        retailerId,
+        retailerShopName: ret.shopName,
+        creditLimit: numLimit,
+        currentDues: 0,
+        availableCredit: numLimit,
+        paymentTerm: paymentTerm as PaymentTerm,
+        status: "ACTIVE",
+        creditGraceDays: Number(creditGraceDays),
+        notes,
+        updatedAt: new Date().toISOString()
+      };
+      store.creditLines.unshift(line);
+    }
+
+    return { success: true, message: "Retailer credit line configured successfully", creditLine: line };
+  });
+
+  server.post("/api/seller/credit-lines/:id/hold", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const line = store.creditLines.find((c) => c.id === id);
+    if (!line) {
+      return reply.status(404).send({ error: "Credit line record not found" });
+    }
+
+    line.status = line.status === "CREDIT_HOLD" ? "ACTIVE" : "CREDIT_HOLD";
+    line.updatedAt = new Date().toISOString();
+
+    return {
+      success: true,
+      message: `Credit status updated to ${line.status} for ${line.retailerShopName}`,
+      creditLine: line
+    };
+  });
+
+  server.get("/api/retailer/credit-lines/:retailerId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId } = req.params as any;
+    const lines = store.creditLines.filter((c) => c.retailerId === retailerId);
+    return { success: true, creditLines: lines };
+  });
+
+  // 15. Pure Payment Tracking Ledger Endpoints (No Payment Gateway)
+  server.post("/api/payments/record-voucher", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const {
+      retailerId,
+      organizationId,
+      amount,
+      paymentMode,
+      referenceNumber,
+      bankName,
+      chequeDate,
+      notes,
+      agentId,
+      agentName
+    } = body;
+
+    if (!retailerId || !organizationId || !amount || !paymentMode) {
+      return reply.status(400).send({ error: "retailerId, organizationId, amount, and paymentMode are required" });
+    }
+
+    const numAmount = Number(amount);
+    if (isNaN(numAmount) || numAmount <= 0) {
+      return reply.status(400).send({ error: "Amount must be a positive number" });
+    }
+
+    const voucher = store.recordPaymentVoucher({
+      retailerId,
+      organizationId,
+      amount: numAmount,
+      paymentMode,
+      referenceNumber,
+      bankName,
+      chequeDate,
+      notes,
+      agentId,
+      agentName
+    });
+
+    if (paymentMode === "CASH") {
+      store.agentSalesTarget.cashInHand += numAmount;
+    }
+
+    return {
+      success: true,
+      message: `Payment voucher ${voucher.voucherNumber} recorded. Ledger credited with ₹${numAmount.toLocaleString("en-IN")}.`,
+      voucher
+    };
+  });
+
+  server.get("/api/ledger/statement", async (req: FastifyRequest, reply: FastifyReply) => {
+    const query = req.query as any;
+    const { organizationId, retailerId } = query;
+
+    if (!organizationId || !retailerId) {
+      return reply.status(400).send({ error: "organizationId and retailerId query parameters are required" });
+    }
+
+    const statement = store.getLedgerStatement(organizationId, retailerId);
+    return { success: true, statement };
+  });
+
+  server.get("/api/ledger/vouchers", async (req: FastifyRequest, reply: FastifyReply) => {
+    const query = req.query as any;
+    let vouchers = store.paymentVouchers;
+
+    if (query.organizationId) {
+      vouchers = vouchers.filter((v) => v.organizationId === query.organizationId);
+    }
+    if (query.retailerId) {
+      vouchers = vouchers.filter((v) => v.retailerId === query.retailerId);
+    }
+
+    return { success: true, vouchers };
+  });
+
+  // 16. OpenStreetMap Geo Reverse Geocoding & Routes
+  server.get("/api/geo/reverse", async (req: FastifyRequest, reply: FastifyReply) => {
+    const query = req.query as any;
+    const lat = parseFloat(query.lat);
+    const lng = parseFloat(query.lng);
+
+    if (isNaN(lat) || isNaN(lng)) {
+      return reply.status(400).send({ error: "Valid lat and lng query parameters are required" });
+    }
+
+    try {
+      const osmUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`;
+      const osmRes = await fetch(osmUrl, {
+        headers: {
+          "User-Agent": "B2B-Sales-Aggregator-Platform/2.0 (admin@anagataitsolutions.in)"
+        }
+      });
+
+      if (osmRes.ok) {
+        const data = await osmRes.json() as any;
+        return {
+          success: true,
+          displayName: data.display_name || `Location (${lat}, ${lng})`,
+          address: data.address || {},
+          source: "OpenStreetMap Nominatim"
+        };
+      }
+    } catch {
+      // Fallback below
+    }
+
+    return {
+      success: true,
+      displayName: `Hazratganj Market, Lucknow (GPS: ${lat.toFixed(4)}, ${lng.toFixed(4)})`,
+      address: {
+        city: "Lucknow",
+        state: "Uttar Pradesh",
+        country: "India",
+        postcode: "226001"
+      },
+      source: "OpenStreetMap Fallback"
+    };
+  });
+
+  server.get("/api/geo/beat-route/:beatId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { beatId } = req.params as any;
+    const beat = store.beats.find((b) => b.id === beatId) || store.beats[0];
+
+    const stops = beat.stops.map((s, idx) => ({
+      ...s,
+      isNextStop: idx === 0,
+      osmMapUrl: `https://www.openstreetmap.org/?mlat=${s.latitude}&mlon=${s.longitude}#map=17/${s.latitude}/${s.longitude}`
+    }));
+
+    const waypoints = stops.map((s) => [s.latitude, s.longitude]);
+
+    return {
+      success: true,
+      beatId: beat.id,
+      beatName: beat.name,
+      dayOfWeek: beat.dayOfWeek,
+      agentName: beat.assignedAgentName,
+      totalStops: stops.length,
+      stops,
+      waypoints,
+      mapProvider: "OpenStreetMap / Leaflet"
     };
   });
 

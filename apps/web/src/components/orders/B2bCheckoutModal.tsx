@@ -237,6 +237,29 @@ export default function B2bCheckoutModal({
 
               <label
                 className={`p-3 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
+                  selectedTerm === "NET_30"
+                    ? "border-indigo-600 bg-indigo-50/50 shadow-sm"
+                    : "border-slate-200 hover:bg-slate-50"
+                }`}
+              >
+                <div className="flex items-start justify-between">
+                  <span className="font-bold text-slate-900 text-xs">Net-30 Monthly Term</span>
+                  <input
+                    type="radio"
+                    name="term"
+                    value="NET_30"
+                    checked={selectedTerm === "NET_30"}
+                    onChange={(e) => setSelectedTerm(e.target.value)}
+                    className="mt-0.5 text-indigo-600"
+                  />
+                </div>
+                <div className="text-[11px] text-slate-500 mt-1">
+                  30-Day monthly billing terms granted by approved sellers.
+                </div>
+              </label>
+
+              <label
+                className={`p-3 rounded-xl border cursor-pointer transition flex flex-col justify-between ${
                   selectedTerm === "COD"
                     ? "border-indigo-600 bg-indigo-50/50 shadow-sm"
                     : "border-slate-200 hover:bg-slate-50"
@@ -254,7 +277,7 @@ export default function B2bCheckoutModal({
                   />
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
-                  Pay with physical cash or UPI upon delivery.
+                  Pay with physical cash or direct UPI upon delivery.
                 </div>
               </label>
 
@@ -266,7 +289,7 @@ export default function B2bCheckoutModal({
                 }`}
               >
                 <div className="flex items-start justify-between">
-                  <span className="font-bold text-slate-900 text-xs">Instant UPI / QR</span>
+                  <span className="font-bold text-slate-900 text-xs">Direct Seller UPI QR</span>
                   <input
                     type="radio"
                     name="term"
@@ -277,7 +300,7 @@ export default function B2bCheckoutModal({
                   />
                 </div>
                 <div className="text-[11px] text-slate-500 mt-1">
-                  Instant bank settlement without utilizing credit.
+                  Direct seller payment without credit utilization.
                 </div>
               </label>
             </div>
