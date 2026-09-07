@@ -981,7 +981,7 @@ async function run() {
   );
 
   // 75. User Handling: Tenant Team Management & Sub-User Provisioning with WhatsApp Alert
-  const newStaffPhone = "919026019566"; // User testing phone
+  const newStaffPhone = `919026019${Math.floor(100 + Math.random() * 900)}`;
   const createSubUserRes = await request("POST", `${API_BASE}/api/tenant/users`, {
     tenantType: "SELLER",
     tenantId: "org_anagata_fmcg",
@@ -994,8 +994,8 @@ async function run() {
   const createdSubUserPass = createSubUserRes.data?.temporaryPassword;
   assert(
     createSubUserRes.statusCode === 200 &&
-    createSubUserId &&
-    createSubUserPass &&
+    createdSubUserId &&
+    createdSubUserPass &&
     createSubUserRes.data?.whatsappDispatched === true,
     "75. User Handling: Tenant Team Sub-User Provisioning & Evolution WhatsApp Dispatch",
     `Created sub-user ${createdSubUserId} with password '${createdSubUserPass}', dispatched to ${newStaffPhone}`
