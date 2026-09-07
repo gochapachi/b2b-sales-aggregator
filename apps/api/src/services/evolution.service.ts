@@ -120,6 +120,27 @@ export class EvolutionService {
     ];
     await this.sendWhatsAppText(params.retailerPhone, lines.join("\n"));
   }
+
+  async sendRetailPosReceipt(params: {
+    customerPhone: string;
+    customerName: string;
+    billNumber: string;
+    grandTotal: number;
+    itemsCount: number;
+    paymentMode: string;
+  }): Promise<void> {
+    const lines = [
+      `🧾 *Digital Purchase Bill / रसीद*`,
+      `*Bill #:* ${params.billNumber}`,
+      `*Customer:* ${params.customerName}`,
+      `*Items:* ${params.itemsCount} products`,
+      `*Total Paid:* ₹${params.grandTotal.toLocaleString("en-IN")}`,
+      `*Payment Mode:* ${params.paymentMode}`,
+      `\nThank you for shopping at your local Kirana!`,
+      `_Powered by B2B Retail POS Ecosystem_`
+    ];
+    await this.sendWhatsAppText(params.customerPhone, lines.join("\n"));
+  }
 }
 
 export const evolutionService = new EvolutionService();

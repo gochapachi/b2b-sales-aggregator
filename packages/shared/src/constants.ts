@@ -195,3 +195,38 @@ export enum AuditAction {
   SCHEME_CREATED = 'SCHEME_CREATED',
   MANUAL_LEDGER_ENTRY = 'MANUAL_LEDGER_ENTRY'
 }
+
+export enum PosPaymentMode {
+  CASH = 'CASH',
+  UPI = 'UPI',
+  KHATA = 'KHATA',
+  SPLIT = 'SPLIT'
+}
+
+export enum KhataCustomerStatus {
+  REGULAR = 'REGULAR',
+  OVERDUE = 'OVERDUE',
+  BLOCKED = 'BLOCKED'
+}
+
+export enum ThermalPrinterType {
+  BLUETOOTH_ESC_POS = 'BLUETOOTH_ESC_POS',
+  USB_ESC_POS = 'USB_ESC_POS',
+  BROWSER_PRINT = 'BROWSER_PRINT'
+}
+
+export enum PlatformRiskLevel {
+  LOW = 'LOW',
+  MODERATE = 'MODERATE',
+  HIGH = 'HIGH',
+  CRITICAL_NPA = 'CRITICAL_NPA'
+}
+
+export enum StockMovementType {
+  B2B_DELIVERY_INWARD = 'B2B_DELIVERY_INWARD',
+  MANUAL_ADD = 'MANUAL_ADD',
+  POS_SALE = 'POS_SALE',
+  SPOILAGE_BURST = 'SPOILAGE_BURST',
+  RTV_RETURN = 'RTV_RETURN',
+  STOCK_ADJUSTMENT = 'STOCK_ADJUSTMENT'
+}

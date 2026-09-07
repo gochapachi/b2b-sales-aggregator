@@ -483,6 +483,119 @@ async function run() {
     `Backup: ${backupRes.data?.backupFile} | Bucket: ${backupRes.data?.bucket} | Size: ${backupRes.data?.sizeMb} MB`
   );
 
+  // =========================================================================
+  // PILLAR 1: RETAIL KIRANA POS SYSTEM
+  // =========================================================================
+  // 41. Retail Kirana POS Inventory & Margin Tracking
+  const posProdRes = await request("GET", `${API_BASE}/api/pos/products?retailerId=ret_gupta_kirana`);
+  assert(
+    posProdRes.statusCode === 200 && posProdRes.data?.success && Array.isArray(posProdRes.data?.products),
+    "41. Retail Kirana POS System: Live Inventory & Margin Tracking",
+    `SKUs in POS: ${posProdRes.data?.count} | Sample: ${posProdRes.data?.products?.[0]?.name} (Margin: ${posProdRes.data?.products?.[0]?.marginPct}%)`
+  );
+
+  // 42. Retail POS Custom Product Inwarding
+  const addPosRes = await request("POST", `${API_BASE}/api/pos/products`, {
+    retailerId: "ret_gupta_kirana",
+    name: "Maggi 2-Minute Noodles 70g",
+    brand: "Nestle",
+    category: "Instant Noodles",
+    sellingPrice: 14,
+    purchasePrice: 11.5,
+    stockQuantity: 48,
+    isVegetarian: true
+  });
+  assert(
+    addPosRes.statusCode === 200 && addPosRes.data?.success && addPosRes.data?.product?.id,
+    "42. Retail POS System: Manual Custom Local SKU Inwarding",
+    `Product: ${addPosRes.data?.product?.name} | SP: ₹${addPosRes.data?.product?.sellingPrice} | Margin: ${addPosRes.data?.product?.marginPct}%`
+  );
+
+  // 43. Automated Platform Delivery Inwarding into Kirana POS
+  const inwardRes = await request("POST", `${API_BASE}/api/pos/inward-from-delivery`, {
+    subOrderId: "subord_001"
+  });
+  assert(
+    inwardRes.statusCode === 200 && inwardRes.data?.success && Array.isArray(inwardRes.data?.inwardedProducts),
+    "43. Closed-Loop Platform-to-POS Stock Inwarding on B2B Order Delivery",
+    `Inwarded: ${inwardRes.data?.inwardedProducts?.length} SKUs into POS with 18% auto-resale margin`
+  );
+
+  // 44. High-Speed Counter POS Checkout & Stock Deduction
+  const posCheckoutRes = await request("POST", `${API_BASE}/api/pos/checkout`, {
+    retailerId: "ret_gupta_kirana",
+    customerName: "Sanjay Kumar",
+    customerPhone: "9876543210",
+    paymentMode: "CASH",
+    items: [{ productId: "pos_pg_80g", quantity: 2 }]
+  });
+  assert(
+    posCheckoutRes.statusCode === 200 && posCheckoutRes.data?.success && posCheckoutRes.data?.bill?.billNumber,
+    "44. High-Speed Counter Checkout: ESC/POS Bill Generation & Instant Stock Deduction",
+    `Bill #${posCheckoutRes.data?.bill?.billNumber} | Grand Total: ₹${posCheckoutRes.data?.bill?.grandTotal} | Mode: ${posCheckoutRes.data?.bill?.paymentMode}`
+  );
+
+  // 45. Customer Udhar Khata Ledger Integration
+  const khataCheckoutRes = await request("POST", `${API_BASE}/api/pos/checkout`, {
+    retailerId: "ret_gupta_kirana",
+    customerName: "Manoj Tiwari",
+    customerPhone: "9555544444",
+    paymentMode: "KHATA",
+    items: [{ productId: "pos_pg_80g", quantity: 3 }]
+  });
+  assert(
+    khataCheckoutRes.statusCode === 200 && khataCheckoutRes.data?.success && khataCheckoutRes.data?.bill?.paymentMode === "KHATA",
+    "45. Digital Customer Udhar Khata: Automated Credit Bill Ledger Entry",
+    `Bill #${khataCheckoutRes.data?.bill?.billNumber} | Charged to Udhar: ₹${khataCheckoutRes.data?.bill?.grandTotal}`
+  );
+
+  // =========================================================================
+  // PILLAR 3: SFA SHARE-OF-SHELF (SOS) AUDIT
+  // =========================================================================
+  // 46. SFA In-Store Share-of-Shelf (SOS) FMCG Audit
+  const shelfAuditRes = await request("POST", `${API_BASE}/api/sfa/shelf-audit`, {
+    agentId: "usr_agent_1",
+    retailerId: "ret_gupta_kirana",
+    retailerShopName: "Gupta Kirana & General Store",
+    category: "Biscuits & Bakery",
+    brandName: "Parle",
+    totalShelfWidthCm: 200,
+    brandFacingWidthCm: 80,
+    facingUnits: 16,
+    competitorBrandName: "Britannia",
+    competitorFacingsCount: 12,
+    eyeLevelFacing: true
+  });
+  assert(
+    shelfAuditRes.statusCode === 200 && shelfAuditRes.data?.success && shelfAuditRes.data?.audit?.shelfSharePct === 40,
+    "46. SFA In-Store Share-of-Shelf (SOS) FMCG Facing Audit & Eye-Level Placement",
+    `Brand Share: ${shelfAuditRes.data?.audit?.shelfSharePct}% | Facings: ${shelfAuditRes.data?.audit?.ourFacingsCount} vs ${shelfAuditRes.data?.audit?.competitorFacingsCount} competitor`
+  );
+
+  // =========================================================================
+  // PILLAR 4: PLATFORM OWNER & SUPER ADMIN ANALYTICS ENGINE
+  // =========================================================================
+  // 47. Super Admin Real-Time GMV Ticker & Unit Economics
+  const adminOverviewRes = await request("GET", `${API_BASE}/api/admin/analytics/overview`);
+  assert(
+    adminOverviewRes.statusCode === 200 && adminOverviewRes.data?.success && adminOverviewRes.data?.overview?.totalGmv > 0,
+    "47. Super Admin Analytics: Real-Time Network GMV Ticker & Unit Economics",
+    `GMV: ₹${adminOverviewRes.data?.overview?.totalGmv?.toLocaleString("en-IN")} | Velocity: ${adminOverviewRes.data?.overview?.orderVelocityPerHour}/hr | Savings: ₹${adminOverviewRes.data?.overview?.wholesalerMonthlySavingsRupees}/mo`
+  );
+
+  // 48. Hyperlocal Ward Heatmaps, FMCG Brand Velocity & 45+ Day NPA Radar
+  const [heatmapRes, brandShareRes, cohortRes, npaRes] = await Promise.all([
+    request("GET", `${API_BASE}/api/admin/analytics/heatmaps`),
+    request("GET", `${API_BASE}/api/admin/analytics/brand-share`),
+    request("GET", `${API_BASE}/api/admin/analytics/cohort-retention`),
+    request("GET", `${API_BASE}/api/admin/analytics/credit-npa`)
+  ]);
+  assert(
+    heatmapRes.statusCode === 200 && brandShareRes.statusCode === 200 && cohortRes.statusCode === 200 && npaRes.statusCode === 200,
+    "48. Super Admin Command: OpenStreetMap Ward Heatmaps, Brand Shares, Cohorts & NPA Radar",
+    `Wards: ${heatmapRes.data?.zones?.length} | Brands: ${brandShareRes.data?.brandShares?.length} | Cohorts: ${cohortRes.data?.cohorts?.length} | NPA Capital: ₹${npaRes.data?.npaSummary?.totalNpaCapital}`
+  );
+
   console.log("\n===============================================================");
   console.log(`VERIFICATION SUMMARY: ${passed} PASSED, ${failed} FAILED`);
   console.log("===============================================================");

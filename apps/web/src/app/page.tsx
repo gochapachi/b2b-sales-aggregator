@@ -43,6 +43,8 @@ import DeliveryRunSheetView from "../components/logistics/DeliveryRunSheetView";
 import TallyMargExportDesk from "../components/accounting/TallyMargExportDesk";
 import RetailerSmartTools from "../components/retailer/RetailerSmartTools";
 import SfaLeaderboardAndAudio from "../components/sfa/SfaLeaderboardAndAudio";
+import RetailPosCheckoutDesk from "../components/pos/RetailPosCheckoutDesk";
+import SuperAdminAnalyticsDashboard from "../components/admin/SuperAdminAnalyticsDashboard";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
@@ -52,7 +54,8 @@ export default function Home() {
 
   // Sub-tabs for roles
   const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "PACKING" | "LOGISTICS" | "ERP" | "ROI">("ORDERS");
-  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "SMART_TOOLS">("CATALOG");
+  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "POS_COUNTER" | "SMART_TOOLS">("CATALOG");
+  const [adminTab, setAdminTab] = useState<"ANALYTICS" | "KYC">("ANALYTICS");
   const [agentTab, setAgentTab] = useState<"CRM" | "LEADERBOARD_COACHING">("CRM");
 
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
@@ -259,7 +262,7 @@ export default function Home() {
               }`}
             >
               <ShoppingBag className="w-3.5 h-3.5" />
-              Udaan B2B Store
+              Kirana Retail POS & B2B
             </button>
             <button
               onClick={() => setActiveRole("AGENT")}
@@ -292,7 +295,7 @@ export default function Home() {
               }`}
             >
               <Shield className="w-3.5 h-3.5" />
-              Super Admin KYC
+              Super Admin HQ
             </button>
           </div>
         </div>
@@ -358,7 +361,7 @@ export default function Home() {
             </div>
 
             {/* Retailer Section Tabs */}
-            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200">
+            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200 flex-wrap">
               <button
                 onClick={() => setRetailerTab("CATALOG")}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
@@ -369,6 +372,17 @@ export default function Home() {
               >
                 <ShoppingBag className="w-3.5 h-3.5" />
                 Wholesale Catalog & Cart
+              </button>
+              <button
+                onClick={() => setRetailerTab("POS_COUNTER")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  retailerTab === "POS_COUNTER"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Receipt className="w-3.5 h-3.5 text-indigo-600" />
+                Kirana Retail POS (Counter Billing & Inwarding)
               </button>
               <button
                 onClick={() => setRetailerTab("SMART_TOOLS")}
@@ -382,6 +396,14 @@ export default function Home() {
                 Retailer Smart Tools (Voice AI, Udhar Khata, Margins)
               </button>
             </div>
+
+            {retailerTab === "POS_COUNTER" && (
+              <RetailPosCheckoutDesk
+                apiBase={API_BASE}
+                retailerId="ret_gupta_kirana"
+                retailerName={retailerProfile?.shopName || "Gupta Kirana & General Store"}
+              />
+            )}
 
             {retailerTab === "SMART_TOOLS" && (
               <RetailerSmartTools
@@ -900,16 +922,46 @@ export default function Home() {
           </div>
         )}
 
-        {/* ================= 4. SUPER ADMIN KYC VIEW ================= */}
+        {/* ================= 4. SUPER ADMIN HQ VIEW ================= */}
         {activeRole === "ADMIN" && (
-          <div className="space-y-8">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-              <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                    <Shield className="w-5 h-5 text-indigo-600" />
-                    Pending B2B Retailer KYC Verification Desk
-                  </h3>
+          <div className="space-y-6">
+            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200 flex-wrap">
+              <button
+                onClick={() => setAdminTab("ANALYTICS")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  adminTab === "ANALYTICS"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
+                Platform Command, GMV & Telemetry
+              </button>
+              <button
+                onClick={() => setAdminTab("KYC")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  adminTab === "KYC"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5 text-indigo-600" />
+                Retailer KYC Verification Desk ({pendingRetailers.length})
+              </button>
+            </div>
+
+            {adminTab === "ANALYTICS" && (
+              <SuperAdminAnalyticsDashboard apiBase={API_BASE} />
+            )}
+
+            {adminTab === "KYC" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-200 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                      <Shield className="w-5 h-5 text-indigo-600" />
+                      Pending B2B Retailer KYC Verification Desk
+                    </h3>
                   <p className="text-xs text-slate-500">
                     Review GSTIN / Udyam / Shop licenses. Approving an account instantly unlocks wholesale prices.
                   </p>
@@ -955,6 +1007,7 @@ export default function Home() {
                 )}
               </div>
             </div>
+            )}
           </div>
         )}
       </main>

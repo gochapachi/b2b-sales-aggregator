@@ -232,6 +232,167 @@ export interface DataStoreAuditLog {
   timestamp: string;
 }
 
+export type PosPaymentMode = "CASH" | "UPI" | "KHATA" | "SPLIT";
+export type PlatformRiskLevel = "LOW" | "MODERATE" | "HIGH" | "CRITICAL_NPA";
+
+export interface DataStoreRetailPosProduct {
+  id: string;
+  retailerId: string;
+  barcode: string;
+  name: string;
+  brand: string;
+  category: string;
+  uom: string;
+  packSize: string;
+  costPrice: number;
+  sellingPrice: number;
+  mrp: number;
+  marginPct: number;
+  currentStock: number;
+  minStockAlert: number;
+  expiryDate?: string;
+  batchNumber?: string;
+  ingredients?: string;
+  fssaiNumber?: string;
+  warrantyMonths?: number;
+  isVegetarian?: boolean;
+  isPlatformInwarded: boolean;
+  hsnCode?: string;
+  gstRatePct: number;
+  lastRestockedDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DataStoreRetailPosBillItem {
+  productId: string;
+  barcode: string;
+  name: string;
+  packSize?: string;
+  quantity: number;
+  uom: string;
+  unitPrice: number;
+  mrp: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalPrice: number;
+  batchNumber?: string;
+  expiryDate?: string;
+}
+
+export interface DataStoreRetailPosBill {
+  id: string;
+  billNumber: string;
+  retailerId: string;
+  customerId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  paymentMode: PosPaymentMode;
+  cashAmount: number;
+  upiAmount: number;
+  khataAmount: number;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  roundOff: number;
+  grandTotal: number;
+  items: DataStoreRetailPosBillItem[];
+  printedAt?: string;
+  whatsappReceiptSent: boolean;
+  createdAt: string;
+}
+
+export interface DataStoreRetailDailyRegister {
+  id: string;
+  retailerId: string;
+  date: string;
+  openingCashFloat: number;
+  totalCashSales: number;
+  totalUpiSales: number;
+  totalKhataSales: number;
+  totalExpenses: number;
+  closingCashActual: number;
+  discrepancy: number;
+  notes?: string;
+  status: "OPEN" | "CLOSED";
+}
+
+export interface DataStoreRetailShopExpense {
+  id: string;
+  retailerId: string;
+  category: "RENT" | "ELECTRICITY" | "WAGES" | "TEA_SNACKS" | "MAINTENANCE" | "OTHER";
+  amount: number;
+  description: string;
+  date: string;
+}
+
+export interface DataStoreShareOfShelfAudit {
+  id: string;
+  visitId: string;
+  agentId: string;
+  retailerId: string;
+  retailerShopName: string;
+  category: string;
+  brandName: string;
+  ourFacingsCount: number;
+  competitorBrandName: string;
+  competitorFacingsCount: number;
+  shelfSharePct: number;
+  notes?: string;
+  photoUrl?: string;
+  auditDate: string;
+}
+
+export interface DataStorePlatformKpiSnapshot {
+  totalGmv: number;
+  totalOrdersCount: number;
+  totalRetailersCount: number;
+  totalWholesalersCount: number;
+  totalCreditOutstanding: number;
+  systemicNpaAmount: number;
+  orderVelocityPerHour: number;
+  averageOrderValue: number;
+  grossContributionMargin: number;
+  wholesalerMonthlySavingsRupees: number;
+  riskDistribution: {
+    lowRiskPct: number;
+    moderateRiskPct: number;
+    highRiskPct: number;
+    npaRiskPct: number;
+  };
+}
+
+export interface DataStoreHeatmapZoneMetric {
+  zoneId: string;
+  wardName: string;
+  latitude: number;
+  longitude: number;
+  activeKiranasCount: number;
+  monthlyGmvRupees: number;
+  stockoutRatePct: number;
+  averageDeliveryTatMinutes: number;
+  demandMismatchIndex: number;
+}
+
+export interface DataStoreBrandMarketShare {
+  category: string;
+  brandName: string;
+  monthlyGmv: number;
+  unitsSold: number;
+  marketSharePct: number;
+  growthPctMoM: number;
+}
+
+export interface DataStoreCohortRetentionRecord {
+  cohortMonth: string;
+  initialRetailersCount: number;
+  m1RetentionPct: number;
+  m2RetentionPct: number;
+  m3RetentionPct: number;
+  m6RetentionPct: number;
+  m12RetentionPct: number;
+}
+
 export interface DataStoreUser {
   id: string;
   phone: string;
@@ -2187,6 +2348,338 @@ class InMemoryDataStore {
     }
   ];
 
+  retailPosProducts: DataStoreRetailPosProduct[] = [
+    {
+      id: "pos_pg_80g",
+      retailerId: "ret_gupta_kirana",
+      barcode: "8901719101014",
+      name: "Parle-G Glucose Biscuits",
+      brand: "Parle",
+      category: "Biscuits & Confectionery",
+      uom: "Packets",
+      packSize: "80g",
+      costPrice: 8.05,
+      sellingPrice: 10.0,
+      mrp: 10.0,
+      marginPct: 19.5,
+      currentStock: 144,
+      minStockAlert: 24,
+      expiryDate: "2027-03-31",
+      batchNumber: "BN-2026-PG01",
+      ingredients: "Wheat Flour (66%), Sugar, Edible Vegetable Oil, Invert Sugar Syrup, Raising Agents, Salt, Milk Solids",
+      fssaiNumber: "10012022000261",
+      warrantyMonths: 6,
+      isVegetarian: true,
+      isPlatformInwarded: true,
+      hsnCode: "19053100",
+      gstRatePct: 5,
+      lastRestockedDate: "2026-09-07T08:00:00Z",
+      createdAt: "2026-09-01T10:00:00Z",
+      updatedAt: "2026-09-07T08:00:00Z"
+    },
+    {
+      id: "pos_tata_tea_250g",
+      retailerId: "ret_gupta_kirana",
+      barcode: "8901052002015",
+      name: "Tata Tea Gold",
+      brand: "Tata Consumer",
+      category: "Tea & Beverages",
+      uom: "Packets",
+      packSize: "250g",
+      costPrice: 115.0,
+      sellingPrice: 135.0,
+      mrp: 145.0,
+      marginPct: 14.8,
+      currentStock: 40,
+      minStockAlert: 10,
+      expiryDate: "2027-06-30",
+      batchNumber: "BN-2026-TT02",
+      ingredients: "Assam CTC Tea leaves blend with gently rolled long leaves",
+      fssaiNumber: "10014031001025",
+      warrantyMonths: 12,
+      isVegetarian: true,
+      isPlatformInwarded: true,
+      hsnCode: "09024010",
+      gstRatePct: 5,
+      lastRestockedDate: "2026-09-06T14:00:00Z",
+      createdAt: "2026-09-01T10:00:00Z",
+      updatedAt: "2026-09-06T14:00:00Z"
+    },
+    {
+      id: "pos_limca_750ml",
+      retailerId: "ret_gupta_kirana",
+      barcode: "8901764012211",
+      name: "Limca Fresh Lemon Drink",
+      brand: "Coca-Cola / Limca",
+      category: "Cold Drinks & Beverages",
+      uom: "Bottles",
+      packSize: "750ml",
+      costPrice: 31.0,
+      sellingPrice: 38.0,
+      mrp: 40.0,
+      marginPct: 18.4,
+      currentStock: 48,
+      minStockAlert: 12,
+      expiryDate: "2026-12-31",
+      batchNumber: "BN-2026-LM01",
+      ingredients: "Carbonated Water, Sugar, Acidity Regulator (330), Lemon flavour",
+      fssaiNumber: "10012011000120",
+      warrantyMonths: 4,
+      isVegetarian: true,
+      isPlatformInwarded: true,
+      hsnCode: "22021010",
+      gstRatePct: 28,
+      lastRestockedDate: "2026-09-05T12:00:00Z",
+      createdAt: "2026-09-01T10:00:00Z",
+      updatedAt: "2026-09-05T12:00:00Z"
+    },
+    {
+      id: "pos_fortune_oil_1l",
+      retailerId: "ret_gupta_kirana",
+      barcode: "8906007281016",
+      name: "Fortune Sunlite Sunflower Oil Pouch",
+      brand: "Fortune (Adani Wilmar)",
+      category: "Edibles & Oils",
+      uom: "Pouches",
+      packSize: "1L",
+      costPrice: 128.0,
+      sellingPrice: 145.0,
+      mrp: 155.0,
+      marginPct: 11.7,
+      currentStock: 36,
+      minStockAlert: 12,
+      expiryDate: "2027-01-31",
+      batchNumber: "BN-2026-FO03",
+      ingredients: "Refined Sunflower Oil, Vitamin A, Vitamin D",
+      fssaiNumber: "10013021000853",
+      warrantyMonths: 9,
+      isVegetarian: true,
+      isPlatformInwarded: true,
+      hsnCode: "15121910",
+      gstRatePct: 5,
+      lastRestockedDate: "2026-09-04T16:00:00Z",
+      createdAt: "2026-09-01T10:00:00Z",
+      updatedAt: "2026-09-04T16:00:00Z"
+    },
+    {
+      id: "pos_loose_dal",
+      retailerId: "ret_gupta_kirana",
+      barcode: "2000010000000",
+      name: "Loose Desi Toor Dal (Polished)",
+      brand: "Local Mandi Premium",
+      category: "Staples & Grains",
+      uom: "Kg",
+      packSize: "Loose Weight",
+      costPrice: 135.0,
+      sellingPrice: 160.0,
+      mrp: 170.0,
+      marginPct: 15.6,
+      currentStock: 65,
+      minStockAlert: 15,
+      expiryDate: "2027-08-31",
+      batchNumber: "BN-MANDI-TD01",
+      ingredients: "Pigeon Peas / Arhar Dal 100%",
+      fssaiNumber: "10019051003401",
+      warrantyMonths: 12,
+      isVegetarian: true,
+      isPlatformInwarded: false,
+      hsnCode: "07132000",
+      gstRatePct: 0,
+      lastRestockedDate: "2026-09-02T11:00:00Z",
+      createdAt: "2026-09-01T10:00:00Z",
+      updatedAt: "2026-09-02T11:00:00Z"
+    }
+  ];
+
+  retailPosBills: DataStoreRetailPosBill[] = [
+    {
+      id: "bill_001",
+      billNumber: "BILL-2026-101",
+      retailerId: "ret_gupta_kirana",
+      customerId: "khata_001",
+      customerName: "Ramesh Chandra (Teacher)",
+      customerPhone: "9820011223",
+      paymentMode: "SPLIT",
+      cashAmount: 100,
+      upiAmount: 0,
+      khataAmount: 135,
+      subtotal: 245,
+      discountTotal: 10,
+      taxTotal: 11.6,
+      roundOff: 0,
+      grandTotal: 235,
+      items: [
+        {
+          productId: "pos_pg_80g",
+          barcode: "8901719101014",
+          name: "Parle-G Glucose Biscuits",
+          packSize: "80g",
+          quantity: 5,
+          uom: "Packets",
+          unitPrice: 10.0,
+          mrp: 10.0,
+          discountAmount: 0,
+          taxAmount: 2.38,
+          totalPrice: 50.0,
+          batchNumber: "BN-2026-PG01",
+          expiryDate: "2027-03-31"
+        },
+        {
+          productId: "pos_tata_tea_250g",
+          barcode: "8901052002015",
+          name: "Tata Tea Gold",
+          packSize: "250g",
+          quantity: 1,
+          uom: "Packets",
+          unitPrice: 135.0,
+          mrp: 145.0,
+          discountAmount: 10.0,
+          taxAmount: 6.42,
+          totalPrice: 135.0,
+          batchNumber: "BN-2026-TT02",
+          expiryDate: "2027-06-30"
+        },
+        {
+          productId: "pos_limca_750ml",
+          barcode: "8901764012211",
+          name: "Limca Fresh Lemon Drink",
+          packSize: "750ml",
+          quantity: 1,
+          uom: "Bottles",
+          unitPrice: 38.0,
+          mrp: 40.0,
+          discountAmount: 0,
+          taxAmount: 8.31,
+          totalPrice: 38.0,
+          batchNumber: "BN-2026-LM01",
+          expiryDate: "2026-12-31"
+        }
+      ],
+      printedAt: "2026-09-07T09:30:00Z",
+      whatsappReceiptSent: true,
+      createdAt: "2026-09-07T09:30:00Z"
+    }
+  ];
+
+  retailDailyRegisters: DataStoreRetailDailyRegister[] = [
+    {
+      id: "reg_today",
+      retailerId: "ret_gupta_kirana",
+      date: "2026-09-07",
+      openingCashFloat: 2000,
+      totalCashSales: 4850,
+      totalUpiSales: 6420,
+      totalKhataSales: 1350,
+      totalExpenses: 450,
+      closingCashActual: 6400,
+      discrepancy: 0,
+      notes: "Smooth morning shift billing. Good tea sales.",
+      status: "OPEN"
+    }
+  ];
+
+  retailShopExpenses: DataStoreRetailShopExpense[] = [
+    {
+      id: "rexp_01",
+      retailerId: "ret_gupta_kirana",
+      category: "TEA_SNACKS",
+      amount: 150,
+      description: "Chai and samosas for helpers and customer hospitality",
+      date: "2026-09-07"
+    },
+    {
+      id: "rexp_02",
+      retailerId: "ret_gupta_kirana",
+      category: "ELECTRICITY",
+      amount: 300,
+      description: "Inverter battery water refill and shop lighting maintenance",
+      date: "2026-09-07"
+    }
+  ];
+
+  shareOfShelfAudits: DataStoreShareOfShelfAudit[] = [
+    {
+      id: "sos_001",
+      visitId: "vis_hazratganj_01",
+      agentId: "usr_agent_1",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      category: "Biscuits & Confectionery",
+      brandName: "Parle",
+      ourFacingsCount: 14,
+      competitorBrandName: "Britannia",
+      competitorFacingsCount: 8,
+      shelfSharePct: 63.6,
+      notes: "Front-rack eye level dominance achieved with Parle-G and Monaco.",
+      photoUrl: "https://images.unsplash.com/photo-1578916171728-46686eac8d58?w=500",
+      auditDate: "2026-09-07"
+    }
+  ];
+
+  heatmapZones: DataStoreHeatmapZoneMetric[] = [
+    {
+      zoneId: "ward_hazratganj",
+      wardName: "Hazratganj & Narahi (Central Ward)",
+      latitude: 26.8467,
+      longitude: 80.9462,
+      activeKiranasCount: 42,
+      monthlyGmvRupees: 680000,
+      stockoutRatePct: 4.2,
+      averageDeliveryTatMinutes: 45,
+      demandMismatchIndex: 12
+    },
+    {
+      zoneId: "ward_aminabad",
+      wardName: "Aminabad & Ganeshganj (Old Market)",
+      latitude: 26.8440,
+      longitude: 80.9250,
+      activeKiranasCount: 68,
+      monthlyGmvRupees: 950000,
+      stockoutRatePct: 6.8,
+      averageDeliveryTatMinutes: 55,
+      demandMismatchIndex: 18
+    },
+    {
+      zoneId: "ward_alambagh",
+      wardName: "Alambagh & Chander Nagar (Transport Corridor)",
+      latitude: 26.8120,
+      longitude: 80.9010,
+      activeKiranasCount: 38,
+      monthlyGmvRupees: 520000,
+      stockoutRatePct: 3.5,
+      averageDeliveryTatMinutes: 35,
+      demandMismatchIndex: 8
+    },
+    {
+      zoneId: "ward_gomtinagar",
+      wardName: "Gomti Nagar (Vibhuti Khand)",
+      latitude: 26.8580,
+      longitude: 80.9980,
+      activeKiranasCount: 54,
+      monthlyGmvRupees: 820000,
+      stockoutRatePct: 5.1,
+      averageDeliveryTatMinutes: 40,
+      demandMismatchIndex: 14
+    }
+  ];
+
+  brandMarketShares: DataStoreBrandMarketShare[] = [
+    { category: "Biscuits", brandName: "Parle", monthlyGmv: 420000, unitsSold: 42000, marketSharePct: 48.5, growthPctMoM: 12.4 },
+    { category: "Biscuits", brandName: "Britannia", monthlyGmv: 280000, unitsSold: 22000, marketSharePct: 32.3, growthPctMoM: 8.1 },
+    { category: "Biscuits", brandName: "Sunfeast (ITC)", monthlyGmv: 165000, unitsSold: 14000, marketSharePct: 19.2, growthPctMoM: 4.6 },
+    { category: "Tea & Beverages", brandName: "Tata Consumer", monthlyGmv: 350000, unitsSold: 2600, marketSharePct: 56.0, growthPctMoM: 15.2 },
+    { category: "Tea & Beverages", brandName: "Red Label (HUL)", monthlyGmv: 275000, unitsSold: 2100, marketSharePct: 44.0, growthPctMoM: 7.8 },
+    { category: "Edible Oils", brandName: "Fortune (Adani)", monthlyGmv: 580000, unitsSold: 4500, marketSharePct: 62.5, growthPctMoM: 18.0 }
+  ];
+
+  cohortRetentions: DataStoreCohortRetentionRecord[] = [
+    { cohortMonth: "Apr 2026", initialRetailersCount: 25, m1RetentionPct: 92, m2RetentionPct: 88, m3RetentionPct: 84, m6RetentionPct: 80, m12RetentionPct: 76 },
+    { cohortMonth: "May 2026", initialRetailersCount: 32, m1RetentionPct: 94, m2RetentionPct: 90, m3RetentionPct: 87, m6RetentionPct: 84, m12RetentionPct: 81 },
+    { cohortMonth: "Jun 2026", initialRetailersCount: 40, m1RetentionPct: 95, m2RetentionPct: 92, m3RetentionPct: 89, m6RetentionPct: 86, m12RetentionPct: 83 },
+    { cohortMonth: "Jul 2026", initialRetailersCount: 48, m1RetentionPct: 96, m2RetentionPct: 93, m3RetentionPct: 91, m6RetentionPct: 88, m12RetentionPct: 85 },
+    { cohortMonth: "Aug 2026", initialRetailersCount: 55, m1RetentionPct: 98, m2RetentionPct: 95, m3RetentionPct: 92, m6RetentionPct: 90, m12RetentionPct: 88 }
+  ];
+
   auditLogs: DataStoreAuditLog[] = [
     {
       id: "aud_001",
@@ -2815,6 +3308,245 @@ ${voucherXmls}
       totalSchemesCount: this.schemes.length
     };
   }
+
+  inwardDeliveredSubOrderToPos(subOrderId: string) {
+    let subOrder = this.allSubOrders.find((s) => s.id === subOrderId || s.id.includes(subOrderId) || subOrderId.includes(s.id));
+    if (!subOrder && this.allSubOrders.length > 0) {
+      subOrder = this.allSubOrders[0];
+    }
+    if (!subOrder) {
+      throw new Error(`SubOrder #${subOrderId} not found`);
+    }
+
+    const inwardedProducts: DataStoreRetailPosProduct[] = [];
+    const masterOrder = this.masterOrders.find((m) => m.id === subOrder.masterOrderId);
+    const retailerId = masterOrder ? masterOrder.retailerId : "ret_001";
+
+    for (const item of subOrder.items) {
+      const barcode = item.skuCode ? `890${Math.abs(item.skuCode.split("").reduce((a, b) => ((a << 5) - a) + b.charCodeAt(0), 0)).toString().slice(0, 10).padStart(10, "0")}` : "8901719101014";
+      
+      let existingPosItem = this.retailPosProducts.find(
+        (p) => p.retailerId === retailerId && (p.barcode === barcode || p.name.toLowerCase() === item.productName.toLowerCase())
+      );
+
+      const landedCost = item.unitPrice;
+      const marginPct = 18.0;
+      const sellingPrice = Math.round(landedCost * (1 + marginPct / 100) * 100) / 100;
+      const mrp = Math.round(sellingPrice * 1.1 * 100) / 100;
+
+      if (existingPosItem) {
+        existingPosItem.currentStock += item.quantity;
+        existingPosItem.costPrice = landedCost;
+        existingPosItem.lastRestockedDate = new Date().toISOString();
+        existingPosItem.updatedAt = new Date().toISOString();
+        inwardedProducts.push(existingPosItem);
+      } else {
+        const newPosProduct: DataStoreRetailPosProduct = {
+          id: `pos_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+          retailerId,
+          barcode,
+          name: item.productName,
+          brand: item.productName.includes("Parle") ? "Parle" : item.productName.includes("Tata") ? "Tata Consumer" : "FMCG Brand",
+          category: item.productName.includes("Biscuit") ? "Biscuits & Confectionery" : "Packaged Goods",
+          uom: item.unitTitle || "Packets",
+          packSize: item.unitTitle || "Unit",
+          costPrice: landedCost,
+          sellingPrice,
+          mrp,
+          marginPct,
+          currentStock: item.quantity,
+          minStockAlert: 10,
+          expiryDate: new Date(Date.now() + 180 * 86400000).toISOString().split("T")[0],
+          batchNumber: `BN-2026-${Date.now().toString().slice(-4)}`,
+          ingredients: "Standard ingredients compliant with FSSAI standards",
+          fssaiNumber: "10012022000261",
+          warrantyMonths: 6,
+          isVegetarian: true,
+          isPlatformInwarded: true,
+          hsnCode: item.productName.includes("Biscuit") ? "19053100" : "09024010",
+          gstRatePct: item.taxPct || 5,
+          lastRestockedDate: new Date().toISOString(),
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        this.retailPosProducts.unshift(newPosProduct);
+        inwardedProducts.push(newPosProduct);
+      }
+    }
+
+    return {
+      success: true,
+      subOrderId,
+      retailerId,
+      inwardedItemsCount: inwardedProducts.length,
+      inwardedProducts
+    };
+  }
+
+  createRetailPosBill(billData: {
+    retailerId: string;
+    customerId?: string;
+    customerName?: string;
+    customerPhone?: string;
+    paymentMode: PosPaymentMode;
+    cashAmount?: number;
+    upiAmount?: number;
+    khataAmount?: number;
+    discountTotal?: number;
+    items: Array<{ productId: string; quantity: number }>;
+  }) {
+    const {
+      retailerId,
+      customerId,
+      customerName,
+      customerPhone,
+      paymentMode,
+      cashAmount = 0,
+      upiAmount = 0,
+      khataAmount = 0,
+      discountTotal = 0,
+      items
+    } = billData;
+
+    const billItems: DataStoreRetailPosBillItem[] = [];
+    let subtotal = 0;
+    let taxTotal = 0;
+
+    for (const it of items) {
+      let prod = this.retailPosProducts.find((p) => p.id === it.productId || p.barcode === it.productId || p.name.toLowerCase().includes(it.productId.toLowerCase()));
+      if (!prod && this.retailPosProducts.length > 0) {
+        prod = this.retailPosProducts[0];
+      }
+      if (!prod) {
+        throw new Error(`POS Product #${it.productId} not found in store`);
+      }
+      
+      prod.currentStock -= it.quantity;
+      prod.updatedAt = new Date().toISOString();
+
+      const lineTotal = Math.round(prod.sellingPrice * it.quantity * 100) / 100;
+      const lineTax = Math.round((lineTotal * (prod.gstRatePct / (100 + prod.gstRatePct))) * 100) / 100;
+      subtotal += lineTotal;
+      taxTotal += lineTax;
+
+      billItems.push({
+        productId: prod.id,
+        barcode: prod.barcode,
+        name: prod.name,
+        packSize: prod.packSize,
+        quantity: it.quantity,
+        uom: prod.uom,
+        unitPrice: prod.sellingPrice,
+        mrp: prod.mrp,
+        discountAmount: 0,
+        taxAmount: lineTax,
+        totalPrice: lineTotal,
+        batchNumber: prod.batchNumber,
+        expiryDate: prod.expiryDate
+      });
+    }
+
+    const grandTotal = Math.max(0, Math.round((subtotal - discountTotal) * 100) / 100);
+
+    const bill: DataStoreRetailPosBill = {
+      id: `bill_${Date.now()}`,
+      billNumber: `BILL-2026-${Date.now().toString().slice(-6)}`,
+      retailerId,
+      customerId,
+      customerName,
+      customerPhone,
+      paymentMode,
+      cashAmount: paymentMode === "CASH" ? grandTotal : paymentMode === "SPLIT" ? cashAmount : 0,
+      upiAmount: paymentMode === "UPI" ? grandTotal : paymentMode === "SPLIT" ? upiAmount : 0,
+      khataAmount: paymentMode === "KHATA" ? grandTotal : paymentMode === "SPLIT" ? khataAmount : 0,
+      subtotal,
+      discountTotal,
+      taxTotal,
+      roundOff: 0,
+      grandTotal,
+      items: billItems,
+      printedAt: new Date().toISOString(),
+      whatsappReceiptSent: !!customerPhone,
+      createdAt: new Date().toISOString()
+    };
+
+    this.retailPosBills.unshift(bill);
+
+    if ((paymentMode === "KHATA" || khataAmount > 0) && customerName && customerPhone) {
+      this.addKhataEntry({
+        retailerId,
+        customerName,
+        customerPhone,
+        type: "CREDIT_GIVEN",
+        amount: paymentMode === "KHATA" ? grandTotal : khataAmount,
+        notes: `POS Bill #${bill.billNumber} credit purchase`
+      });
+    }
+
+    const todayReg = this.retailDailyRegisters.find((r) => r.retailerId === retailerId && r.status === "OPEN");
+    if (todayReg) {
+      todayReg.totalCashSales += bill.cashAmount;
+      todayReg.totalUpiSales += bill.upiAmount;
+      todayReg.totalKhataSales += bill.khataAmount;
+    }
+
+    return bill;
+  }
+
+  recordDailyRegister(data: {
+    retailerId: string;
+    closingCashActual: number;
+    notes?: string;
+  }) {
+    const todayReg = this.retailDailyRegisters.find((r) => r.retailerId === data.retailerId && r.status === "OPEN") || this.retailDailyRegisters[0];
+    const expectedClosing = todayReg.openingCashFloat + todayReg.totalCashSales - todayReg.totalExpenses;
+    todayReg.closingCashActual = data.closingCashActual;
+    todayReg.discrepancy = Math.round((data.closingCashActual - expectedClosing) * 100) / 100;
+    todayReg.status = "CLOSED";
+    todayReg.notes = data.notes || todayReg.notes;
+    return todayReg;
+  }
+
+  getPlatformAnalyticsOverview(): DataStorePlatformKpiSnapshot {
+    const wholesaleGmv = this.allSubOrders.reduce((acc, s) => acc + (s.grandTotal || 0), 0);
+    const retailGmv = this.retailPosBills.reduce((acc, b) => acc + (b.grandTotal || 0), 0);
+    const totalGmv = wholesaleGmv + retailGmv;
+
+    const totalCreditOutstanding = this.creditLines.reduce((acc, c) => acc + c.currentDues, 0);
+    const systemicNpaAmount = Math.round(totalCreditOutstanding * 0.08 * 100) / 100;
+
+    return {
+      totalGmv: Math.round(totalGmv * 100) / 100,
+      totalOrdersCount: this.allSubOrders.length + this.retailPosBills.length,
+      totalRetailersCount: this.retailers.length,
+      totalWholesalersCount: this.organizations.length,
+      totalCreditOutstanding: Math.round(totalCreditOutstanding * 100) / 100,
+      systemicNpaAmount,
+      orderVelocityPerHour: 14.5,
+      averageOrderValue: Math.round((wholesaleGmv / (this.allSubOrders.length || 1)) * 100) / 100,
+      grossContributionMargin: 18.5,
+      wholesalerMonthlySavingsRupees: 27000 * this.organizations.length,
+      riskDistribution: {
+        lowRiskPct: 72.5,
+        moderateRiskPct: 19.5,
+        highRiskPct: 5.2,
+        npaRiskPct: 2.8
+      }
+    };
+  }
+
+  getHyperlocalHeatmapData() {
+    return this.heatmapZones;
+  }
+
+  getFmcgBrandMarketShare() {
+    return this.brandMarketShares;
+  }
+
+  getCohortRetentionData() {
+    return this.cohortRetentions;
+  }
 }
 
 export const store = new InMemoryDataStore();
+

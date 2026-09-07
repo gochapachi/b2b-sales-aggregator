@@ -19,7 +19,12 @@ import {
   DataStoreProductSku,
   DataStoreCreditLine,
   DataStorePaymentVoucher,
-  DataStoreLedgerEntry
+  DataStoreLedgerEntry,
+  DataStoreRetailPosProduct,
+  DataStoreRetailPosBill,
+  DataStoreRetailDailyRegister,
+  DataStoreShareOfShelfAudit,
+  PosPaymentMode
 } from "./store/data-store";
 import { evolutionService } from "./services/evolution.service";
 import { calculateSellerSavings } from "./services/roi.service";
@@ -870,10 +875,14 @@ async function startServer() {
       transitDurationMinutes: targetSubOrder.transitDurationMinutes
     });
 
+    // Automatically inward delivered B2B goods into Kirana Retail POS inventory
+    const inwardResult = store.inwardDeliveredSubOrderToPos(subOrderId);
+
     return {
       success: true,
-      message: `Delivery successfully verified! Recorded transit time: ${targetSubOrder.transitDurationMinutes} minutes.`,
-      subOrder: targetSubOrder
+      message: `Delivery successfully verified! Recorded transit time: ${targetSubOrder.transitDurationMinutes} minutes. ${inwardResult.inwardedItemsCount} items auto-inwarded to Retail POS.`,
+      subOrder: targetSubOrder,
+      inwardedProducts: inwardResult.inwardedProducts
     };
   });
 
@@ -2058,6 +2067,309 @@ async function startServer() {
       recognizedCommand: "REPEAT_LAST_ORDER",
       responseMessage: "Hello Gupta Kirana! We found your last order ORD-100234 (12 Cartons Parle-G). Click to confirm reorder: https://b2b.anagataitsolutions.in/reorder/ORD-100234",
       phone: phone || "9876543210"
+    };
+  });
+
+  // =========================================================================
+  // 25. RETAIL KIRANA POS SYSTEM (PILLAR 1)
+  // =========================================================================
+  const matchRetailer = (pRetailerId: string, reqRetailerId?: string) => {
+    if (!reqRetailerId) return true;
+    if (pRetailerId === reqRetailerId) return true;
+    if ((reqRetailerId === "ret_001" || reqRetailerId === "ret_gupta") && pRetailerId === "ret_gupta_kirana") return true;
+    if (reqRetailerId === "ret_gupta_kirana" && pRetailerId === "ret_001") return true;
+    return false;
+  };
+
+  server.get("/api/pos/products", async (req: FastifyRequest) => {
+    const query = req.query as any;
+    let products = store.retailPosProducts.filter((p) => matchRetailer(p.retailerId, query.retailerId));
+    if (query.category) {
+      products = products.filter((p) => p.category.toLowerCase() === query.category.toLowerCase());
+    }
+    if (query.search) {
+      const q = query.search.toLowerCase();
+      products = products.filter((p) => p.name.toLowerCase().includes(q) || p.barcode.includes(q));
+    }
+    if (query.lowStock === "true") {
+      products = products.filter((p) => p.currentStock <= p.minStockAlert);
+    }
+    return { success: true, count: products.length, products };
+  });
+
+  server.post("/api/pos/products", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    if (!body.name || body.sellingPrice === undefined) {
+      return reply.status(400).send({ error: "Product name and sellingPrice are required" });
+    }
+    const sellingPrice = Number(body.sellingPrice);
+    const costPrice = Number(body.purchasePrice) || Number(body.costPrice) || Math.round(sellingPrice * 0.85 * 100) / 100;
+    const marginPct = sellingPrice > 0 ? Math.round(((sellingPrice - costPrice) / sellingPrice) * 100 * 10) / 10 : 15;
+    const newProd: DataStoreRetailPosProduct = {
+      id: `pos_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      retailerId: body.retailerId || "ret_gupta_kirana",
+      barcode: body.barcode || `890${Math.floor(1000000000 + Math.random() * 9000000000)}`,
+      name: body.name,
+      brand: body.brand || "Retail Brand",
+      category: body.category || "General Grocery",
+      uom: body.uom || body.unit || "PCS",
+      packSize: body.packSize || "1 Unit",
+      costPrice,
+      sellingPrice,
+      mrp: Number(body.mrp) || sellingPrice,
+      marginPct,
+      currentStock: Number(body.stockQuantity) || Number(body.currentStock) || 0,
+      minStockAlert: Number(body.reorderLevel) || Number(body.minStockAlert) || 5,
+      expiryDate: body.expiryDate || new Date(Date.now() + 180 * 86400000).toISOString().split("T")[0],
+      batchNumber: body.batchNumber || `BCH-${Date.now().toString().slice(-4)}`,
+      ingredients: body.ingredients || "Quality grocery ingredients",
+      fssaiNumber: body.fssaiNumber || "10012022000261",
+      warrantyMonths: body.warrantyMonths ? Number(body.warrantyMonths) : 0,
+      isVegetarian: body.isVegetarian !== undefined ? Boolean(body.isVegetarian) : true,
+      isPlatformInwarded: false,
+      hsnCode: body.hsnCode || "19053100",
+      gstRatePct: Number(body.gstRate) || Number(body.gstRatePct) || 5,
+      lastRestockedDate: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    store.retailPosProducts.unshift(newProd);
+    return { success: true, message: "Retail product added successfully", product: newProd };
+  });
+
+  server.post("/api/pos/checkout", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    if (!body.items || !Array.isArray(body.items) || body.items.length === 0) {
+      return reply.status(400).send({ error: "Cart items are required for checkout" });
+    }
+    try {
+      const paymentMode: PosPaymentMode = body.paymentMode === "KHATA" || body.paymentMode === "UDHAR_KHATA"
+        ? "KHATA"
+        : body.paymentMode === "UPI" || body.paymentMode === "UPI_QR"
+        ? "UPI"
+        : body.paymentMode === "SPLIT"
+        ? "SPLIT"
+        : "CASH";
+
+      const items = body.items.map((it: any) => ({
+        productId: it.productId || it.id || it.barcode,
+        quantity: Number(it.quantity) || 1
+      }));
+
+      const bill = store.createRetailPosBill({
+        retailerId: body.retailerId || "ret_gupta_kirana",
+        customerId: body.customerId,
+        customerName: body.customerName,
+        customerPhone: body.customerPhone,
+        paymentMode,
+        cashAmount: body.cashAmount !== undefined ? Number(body.cashAmount) : undefined,
+        upiAmount: body.upiAmount !== undefined ? Number(body.upiAmount) : undefined,
+        khataAmount: body.khataAmount !== undefined ? Number(body.khataAmount) : undefined,
+        discountTotal: Number(body.discountAmount) || Number(body.discountTotal) || 0,
+        items
+      });
+
+      // Dispatch zero-cost WhatsApp digital receipt via Evolution API if customer phone provided
+      if (body.customerPhone && body.sendWhatsAppReceipt !== false) {
+        evolutionService.sendRetailPosReceipt({
+          customerPhone: body.customerPhone,
+          customerName: body.customerName || "Valued Customer",
+          billNumber: bill.billNumber,
+          grandTotal: bill.grandTotal,
+          itemsCount: bill.items.length,
+          paymentMode: bill.paymentMode
+        });
+      }
+
+      return {
+        success: true,
+        message: `Counter receipt ${bill.billNumber} generated successfully!`,
+        bill
+      };
+    } catch (err: any) {
+      return reply.status(500).send({ error: err.message || "Failed to process POS checkout" });
+    }
+  });
+
+  server.get("/api/pos/bills", async (req: FastifyRequest) => {
+    const query = req.query as any;
+    const bills = store.retailPosBills.filter((b) => matchRetailer(b.retailerId, query.retailerId));
+    return { success: true, count: bills.length, bills };
+  });
+
+  server.post("/api/pos/daily-register", async (req: FastifyRequest) => {
+    const body = req.body as any;
+    const register = store.recordDailyRegister({
+      retailerId: body.retailerId || "ret_gupta_kirana",
+      closingCashActual: Number(body.closingCashActual) || Number(body.countedCash) || 1500,
+      notes: body.notes
+    });
+    return { success: true, message: `Cash drawer register marked ${register.status}`, register };
+  });
+
+  server.get("/api/pos/daily-register", async (req: FastifyRequest) => {
+    const query = req.query as any;
+    const registers = store.retailDailyRegisters.filter((r) => matchRetailer(r.retailerId, query.retailerId));
+    return { success: true, count: registers.length, registers };
+  });
+
+  server.get("/api/pos/financials", async (req: FastifyRequest) => {
+    const query = req.query as any;
+    const today = new Date().toISOString().split("T")[0];
+    const retailerBills = store.retailPosBills.filter((b) => matchRetailer(b.retailerId, query.retailerId));
+    const todayBills = retailerBills.filter((b) => b.createdAt.startsWith(today));
+
+    const todaySales = todayBills.reduce((acc, b) => acc + b.grandTotal, 0);
+    const todayCashSales = todayBills.reduce((acc, b) => acc + (b.cashAmount || 0), 0);
+    const todayUpiSales = todayBills.reduce((acc, b) => acc + (b.upiAmount || 0), 0);
+    const todayKhataSales = todayBills.reduce((acc, b) => acc + (b.khataAmount || 0), 0);
+
+    const khataCustomers = store.customerKhatas.filter((k) => matchRetailer(k.retailerId, query.retailerId));
+    const totalKhataOutstanding = khataCustomers.reduce((acc, k) => acc + k.totalDues, 0);
+
+    const products = store.retailPosProducts.filter((p) => matchRetailer(p.retailerId, query.retailerId));
+    const inventoryStockValue = products.reduce((acc, p) => acc + (p.costPrice * p.currentStock), 0);
+    const inventoryRetailValue = products.reduce((acc, p) => acc + (p.sellingPrice * p.currentStock), 0);
+    const lowStockCount = products.filter((p) => p.currentStock <= p.minStockAlert).length;
+    const expiringSoonCount = products.filter((p) => {
+      if (!p.expiryDate) return false;
+      const days = (new Date(p.expiryDate).getTime() - Date.now()) / 86400000;
+      return days > 0 && days <= 30;
+    }).length;
+
+    const latestRegister = store.retailDailyRegisters.find((r) => matchRetailer(r.retailerId, query.retailerId) && r.date === today) || store.retailDailyRegisters[0];
+    const expectedCashInDrawer = (latestRegister ? latestRegister.openingCashFloat : 1500) + todayCashSales;
+
+    return {
+      success: true,
+      financials: {
+        todaySales,
+        todayCashSales,
+        todayUpiSales,
+        todayKhataSales,
+        todayBillsCount: todayBills.length,
+        expectedCashInDrawer,
+        totalKhataOutstanding,
+        khataCustomersCount: khataCustomers.length,
+        inventoryStockValue: Math.round(inventoryStockValue),
+        inventoryRetailValue: Math.round(inventoryRetailValue),
+        estimatedGrossMarginPct: inventoryRetailValue > 0 ? Math.round(((inventoryRetailValue - inventoryStockValue) / inventoryRetailValue) * 100) : 18,
+        lowStockCount,
+        expiringSoonCount,
+        totalSkusCount: products.length
+      }
+    };
+  });
+
+  server.post("/api/pos/inward-from-delivery", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { subOrderId } = req.body as any;
+    if (!subOrderId) {
+      return reply.status(400).send({ error: "subOrderId is required for inwarding" });
+    }
+    const inwardResult = store.inwardDeliveredSubOrderToPos(subOrderId);
+    return {
+      success: true,
+      message: `Inwarded ${inwardResult.inwardedItemsCount} items from sub-order ${subOrderId} into Kirana POS stock`,
+      inwardedProducts: inwardResult.inwardedProducts
+    };
+  });
+
+  // =========================================================================
+  // 26. SFA SHARE-OF-SHELF (SOS) AUDIT (PILLAR 3)
+  // =========================================================================
+  server.post("/api/sfa/shelf-audit", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    if (!body.retailerId || !body.category || !body.totalShelfWidthCm || !body.brandFacingWidthCm) {
+      return reply.status(400).send({ error: "retailerId, category, totalShelfWidthCm, and brandFacingWidthCm are required" });
+    }
+    const totalWidth = Number(body.totalShelfWidthCm);
+    const brandWidth = Number(body.brandFacingWidthCm);
+    const shelfSharePercentage = totalWidth > 0 ? Math.round((brandWidth / totalWidth) * 100) : 0;
+
+    const audit: DataStoreShareOfShelfAudit = {
+      id: `sos_${Date.now()}`,
+      visitId: body.visitId || `vis_${Date.now()}`,
+      agentId: body.agentId || "usr_agent_1",
+      retailerId: body.retailerId,
+      retailerShopName: body.retailerShopName || "Gupta Kirana",
+      category: body.category,
+      brandName: body.brandName || "Parle",
+      ourFacingsCount: Number(body.brandFacingWidthCm) || Number(body.facingUnits) || 12,
+      competitorBrandName: body.competitorBrandName || "Britannia",
+      competitorFacingsCount: Number(body.competitorFacingsCount) || 8,
+      shelfSharePct: shelfSharePercentage,
+      notes: body.notes || "Audited via Field Sales Agent app",
+      photoUrl: body.shelfPhotoMinioUrl || `https://server.anagataitsolutions.in/minio/b2b-shelf-audits/shelf_${Date.now()}.jpg`,
+      auditDate: new Date().toISOString()
+    };
+    store.shareOfShelfAudits.unshift(audit);
+    return {
+      success: true,
+      message: `Share-of-shelf audit recorded (${shelfSharePercentage}% brand share)`,
+      audit
+    };
+  });
+
+  server.get("/api/sfa/shelf-audit/:retailerId", async (req: FastifyRequest) => {
+    const { retailerId } = req.params as any;
+    const audits = store.shareOfShelfAudits.filter((a) => a.retailerId === retailerId);
+    return { success: true, count: audits.length, audits };
+  });
+
+  // =========================================================================
+  // 27. SUPER ADMIN PLATFORM ANALYTICS ENGINE (PILLAR 4)
+  // =========================================================================
+  server.get("/api/admin/analytics/overview", async () => {
+    const overview = store.getPlatformAnalyticsOverview();
+    return { success: true, overview };
+  });
+
+  server.get("/api/admin/analytics/heatmaps", async () => {
+    const zones = store.getHyperlocalHeatmapData();
+    return { success: true, count: zones.length, zones };
+  });
+
+  server.get("/api/admin/analytics/brand-share", async () => {
+    const brandShares = store.getFmcgBrandMarketShare();
+    return { success: true, count: brandShares.length, brandShares };
+  });
+
+  server.get("/api/admin/analytics/cohort-retention", async () => {
+    const cohorts = store.getCohortRetentionData();
+    return { success: true, count: cohorts.length, cohorts };
+  });
+
+  server.get("/api/admin/analytics/credit-npa", async () => {
+    const creditLinesWithDues = store.creditLines.filter((c) => c.currentDues > 0);
+    const totalOverdueCapital = creditLinesWithDues.reduce((acc, c) => acc + c.currentDues, 0);
+    const npaCapital = Math.round(totalOverdueCapital * 0.08 * 100) / 100;
+
+    const highRiskRetailers = store.retailers.map((r) => {
+      const cl = store.creditLines.find((c) => c.retailerId === r.id);
+      const dues = cl ? cl.currentDues : r.creditDues;
+      const isHighDues = dues > (r.creditLimit * 0.8);
+      return {
+        retailerId: r.id,
+        shopName: r.shopName,
+        ownerName: r.ownerName,
+        phone: r.phone,
+        creditLimit: r.creditLimit,
+        creditDues: dues,
+        status: cl ? cl.status : "ACTIVE",
+        riskScore: isHighDues ? "HIGH_NPA" : dues > 0 ? "MODERATE" : "HEALTHY"
+      };
+    }).filter((r) => r.creditDues > 0);
+
+    return {
+      success: true,
+      npaSummary: {
+        totalOverdueCapital,
+        totalNpaCapital: npaCapital,
+        overdueAccountsCount: creditLinesWithDues.length,
+        npaAccountsCount: Math.ceil(creditLinesWithDues.length * 0.2),
+        systemicRiskLevel: npaCapital > 50000 ? "HIGH" : npaCapital > 10000 ? "MODERATE" : "LOW"
+      },
+      highRiskRetailers
     };
   });
 

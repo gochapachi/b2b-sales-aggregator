@@ -22,7 +22,12 @@ import {
   PdcStatus,
   KhataEntryType,
   ReturnReason,
-  AuditAction
+  AuditAction,
+  PosPaymentMode,
+  KhataCustomerStatus,
+  ThermalPrinterType,
+  PlatformRiskLevel,
+  StockMovementType
 } from '../constants';
 
 export interface User {
@@ -752,6 +757,164 @@ export interface SystemTelemetryStats {
   minioStatus: 'CONNECTED' | 'DISCONNECTED';
   totalProductsCount: number;
   totalOrdersCount: number;
+}
+
+export interface RetailPosProduct {
+  id: string;
+  retailerId: string;
+  barcode: string;
+  name: string;
+  brand: string;
+  category: string;
+  uom: string;
+  packSize: string;
+  costPrice: number;
+  sellingPrice: number;
+  mrp: number;
+  marginPct: number;
+  currentStock: number;
+  minStockAlert: number;
+  expiryDate?: string;
+  batchNumber?: string;
+  ingredients?: string;
+  fssaiNumber?: string;
+  warrantyMonths?: number;
+  isVegetarian?: boolean;
+  isPlatformInwarded: boolean;
+  hsnCode?: string;
+  gstRatePct: number;
+  lastRestockedDate?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetailPosBillItem {
+  productId: string;
+  barcode: string;
+  name: string;
+  packSize?: string;
+  quantity: number;
+  uom: string;
+  unitPrice: number;
+  mrp: number;
+  discountAmount: number;
+  taxAmount: number;
+  totalPrice: number;
+  batchNumber?: string;
+  expiryDate?: string;
+}
+
+export interface RetailPosBill {
+  id: string;
+  billNumber: string;
+  retailerId: string;
+  customerId?: string;
+  customerName?: string;
+  customerPhone?: string;
+  paymentMode: PosPaymentMode;
+  cashAmount: number;
+  upiAmount: number;
+  khataAmount: number;
+  subtotal: number;
+  discountTotal: number;
+  taxTotal: number;
+  roundOff: number;
+  grandTotal: number;
+  items: RetailPosBillItem[];
+  printedAt?: string;
+  whatsappReceiptSent: boolean;
+  createdAt: string;
+}
+
+export interface RetailDailyRegister {
+  id: string;
+  retailerId: string;
+  date: string;
+  openingCashFloat: number;
+  totalCashSales: number;
+  totalUpiSales: number;
+  totalKhataSales: number;
+  totalExpenses: number;
+  closingCashActual: number;
+  discrepancy: number;
+  notes?: string;
+  status: 'OPEN' | 'CLOSED';
+}
+
+export interface RetailShopExpense {
+  id: string;
+  retailerId: string;
+  category: 'RENT' | 'ELECTRICITY' | 'WAGES' | 'TEA_SNACKS' | 'MAINTENANCE' | 'OTHER';
+  amount: number;
+  description: string;
+  date: string;
+}
+
+export interface ShareOfShelfAudit {
+  id: string;
+  visitId: string;
+  agentId: string;
+  retailerId: string;
+  retailerShopName: string;
+  category: string;
+  brandName: string;
+  ourFacingsCount: number;
+  competitorBrandName: string;
+  competitorFacingsCount: number;
+  shelfSharePct: number;
+  notes?: string;
+  photoUrl?: string;
+  auditDate: string;
+}
+
+export interface PlatformKpiSnapshot {
+  totalGmv: number;
+  totalOrdersCount: number;
+  totalRetailersCount: number;
+  totalWholesalersCount: number;
+  totalCreditOutstanding: number;
+  systemicNpaAmount: number;
+  orderVelocityPerHour: number;
+  averageOrderValue: number;
+  grossContributionMargin: number;
+  wholesalerMonthlySavingsRupees: number;
+  riskDistribution: {
+    lowRiskPct: number;
+    moderateRiskPct: number;
+    highRiskPct: number;
+    npaRiskPct: number;
+  };
+}
+
+export interface HeatmapZoneMetric {
+  zoneId: string;
+  wardName: string;
+  latitude: number;
+  longitude: number;
+  activeKiranasCount: number;
+  monthlyGmvRupees: number;
+  stockoutRatePct: number;
+  averageDeliveryTatMinutes: number;
+  demandMismatchIndex: number;
+}
+
+export interface BrandMarketShare {
+  category: string;
+  brandName: string;
+  monthlyGmv: number;
+  unitsSold: number;
+  marketSharePct: number;
+  growthPctMoM: number;
+}
+
+export interface CohortRetentionRecord {
+  cohortMonth: string;
+  initialRetailersCount: number;
+  m1RetentionPct: number;
+  m2RetentionPct: number;
+  m3RetentionPct: number;
+  m6RetentionPct: number;
+  m12RetentionPct: number;
 }
 
 
