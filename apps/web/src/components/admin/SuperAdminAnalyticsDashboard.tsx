@@ -345,7 +345,7 @@ export default function SuperAdminAnalyticsDashboard({ apiBase }: SuperAdminAnal
                     <Cpu className="w-4 h-4 text-indigo-400" /> CPU Load Avg (1m, 5m, 15m)
                   </span>
                   <span className="font-bold text-emerald-400">
-                    {telemetry?.cpuLoad?.join(", ") || "0.12, 0.18, 0.15"}
+                    {Array.isArray(telemetry?.cpuLoad) ? telemetry.cpuLoad.join(", ") : (telemetry?.cpuLoad || "0.12, 0.18, 0.15")}
                   </span>
                 </div>
 
@@ -379,7 +379,7 @@ export default function SuperAdminAnalyticsDashboard({ apiBase }: SuperAdminAnal
             </div>
 
             <div className="mt-6 pt-4 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between">
-              <span>RAM: {telemetry?.memoryUsageMb || 184} MB / 8,192 MB</span>
+              <span>RAM (Heap): {telemetry?.memoryUsageMb?.heapUsed ?? 184} MB (RSS: {telemetry?.memoryUsageMb?.rss ?? 240} MB) / 8,192 MB</span>
               <span>Active TCP: {telemetry?.activeConnections || 14}</span>
             </div>
           </div>
