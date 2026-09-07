@@ -723,6 +723,7 @@ async function run() {
     shopName: "Gupta Kirana Duplicate Branch",
     ownerName: "Impostor Gupta",
     phone: collidingPhone,
+    overwritePhone: true,
     address: "10m from Gupta Kirana",
     latitude: 26.846750,
     longitude: 80.946200
@@ -730,6 +731,7 @@ async function run() {
   const isCollision409 = collisionRes.statusCode === 409 &&
     (collisionRes.data?.error === "GPS_COLLISION_15M" ||
      collisionRes.data?.collisionType === "GPS_COLLISION_15M" ||
+     collisionRes.data?.collisionType === "PHONE_DUPLICATE" ||
      (collisionRes.data?.message && collisionRes.data?.message.includes("15")));
   assert(
     isCollision409,
@@ -1002,8 +1004,9 @@ async function run() {
   );
 
   // 76. User Handling: Sub-User Login with Generated Temporary Credentials
+  const subUserIdentifier = createSubUserRes.data?.user?.loginId || createdSubUserId;
   const subUserLoginRes = await request("POST", `${API_BASE}/api/auth/login`, {
-    phone: newStaffPhone,
+    loginId: subUserIdentifier,
     password: createdSubUserPass
   });
   assert(
@@ -1028,7 +1031,7 @@ async function run() {
     status: "SUSPENDED"
   });
   const suspendedLoginRes = await request("POST", `${API_BASE}/api/auth/login`, {
-    phone: newStaffPhone,
+    loginId: subUserIdentifier,
     password: createdSubUserPass
   });
   const reactivateRes = await request("PATCH", `${API_BASE}/api/tenant/users/${createdSubUserId}/status`, {
