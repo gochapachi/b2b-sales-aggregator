@@ -10,10 +10,15 @@ import {
   Alert,
   RefreshControl
 } from "react-native";
+import ProductDetailModal from "./ProductDetailModal";
 
 const API_BASE = "https://api-b2b.anagataitsolutions.in";
 
-export default function RetailerHomeScreen() {
+interface RetailerHomeScreenProps {
+  onNavigateTab?: (tab: "CATALOG" | "ORDERS" | "PROFILE") => void;
+}
+
+export default function RetailerHomeScreen({ onNavigateTab }: RetailerHomeScreenProps = {}) {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [products, setProducts] = useState<any[]>([]);
@@ -22,6 +27,11 @@ export default function RetailerHomeScreen() {
   const [searchQuery, setSearchQuery] = useState("");
   const [cart, setCart] = useState<{ [skuId: string]: number }>({});
   const [orderSubmitting, setOrderSubmitting] = useState(false);
+  const [selectedProduct, setSelectedProduct] = useState<any | null>(null);
+
+  const setQuantityDirect = (skuId: string, quantity: number) => {
+    setCart((prev) => ({ ...prev, [skuId]: quantity }));
+  };
 
   const categories = [
     { id: "ALL", label: "All Items" },
@@ -171,23 +181,31 @@ export default function RetailerHomeScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         {/* Active Store Profile Header */}
-        <View style={styles.header}>
+        <TouchableOpacity
+          style={styles.header}
+          onPress={() => onNavigateTab && onNavigateTab("PROFILE")}
+          activeOpacity={0.8}
+        >
           <View style={{ flex: 1 }}>
             <Text style={styles.headerTitle}>Gupta Kirana & General Store</Text>
-            <Text style={styles.headerSubtitle}>Verified B2B Storefront • Lucknow Hazratganj</Text>
+            <Text style={styles.headerSubtitle}>Verified B2B Storefront • Lucknow Hazratganj ➔</Text>
           </View>
           <View style={styles.creditPill}>
             <Text style={styles.creditPillLabel}>Net-7 Limit</Text>
             <Text style={styles.creditPillValue}>₹35,800</Text>
           </View>
-        </View>
+        </TouchableOpacity>
 
         {/* Live Delivery OTP Alert Banner */}
         {activeDeliveryOtp ? (
-          <View style={styles.otpBanner}>
+          <TouchableOpacity
+            style={styles.otpBanner}
+            onPress={() => onNavigateTab && onNavigateTab("ORDERS")}
+            activeOpacity={0.8}
+          >
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
               <Text style={styles.otpBannerTitle}>🚚 Crates Out for Delivery!</Text>
-              <Text style={styles.otpBadge}>LIVE</Text>
+              <Text style={styles.otpBadge}>TAP FOR DETAILS</Text>
             </View>
             <Text style={styles.otpBannerSubtitle}>
               {activeDeliveryOtp.organizationName} • #{activeDeliveryOtp.masterOrderNumber}
@@ -197,9 +215,9 @@ export default function RetailerHomeScreen() {
               <Text style={styles.otpCodeValue}>{activeDeliveryOtp.deliveryOtp}</Text>
             </View>
             <Text style={styles.otpInstructions}>
-              Inspect seal & share this OTP with driver to confirm handoff.
+              Inspect seal & share this OTP with driver to confirm handoff. Tap to track.
             </Text>
-          </View>
+          </TouchableOpacity>
         ) : (
           <View style={styles.verifiedNotice}>
             <Text style={styles.verifiedNoticeText}>
@@ -273,21 +291,30 @@ export default function RetailerHomeScreen() {
           ) : (
             filteredProducts.map((prod) => (
               <View key={prod.id} style={styles.productCard}>
-                {/* Brand & Margin Chip Header */}
-                <View style={styles.cardHeader}>
-                  <Text style={styles.brandBadge}>{prod.brand || "FMCG"}</Text>
-                  {prod.marginPct > 0 && (
-                    <View style={styles.marginBadge}>
-                      <Text style={styles.marginBadgeText}>+{prod.marginPct}% Margin</Text>
+                {/* Tappable Card Header & Info to open ProductDetailModal */}
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setSelectedProduct(prod)}
+                  style={styles.cardHeaderTouchable}
+                >
+                  <View style={styles.cardHeader}>
+                    <Text style={styles.brandBadge}>{prod.brand || "FMCG"}</Text>
+                    {prod.marginPct > 0 && (
+                      <View style={styles.marginBadge}>
+                        <Text style={styles.marginBadgeText}>+{prod.marginPct}% Margin</Text>
+                      </View>
+                    )}
+                    <View style={styles.inspectPill}>
+                      <Text style={styles.inspectPillText}>Specs & Slabs 🔍</Text>
                     </View>
-                  )}
-                </View>
+                  </View>
 
-                {/* Product Name */}
-                <Text style={styles.productName}>{prod.name}</Text>
-                <Text style={styles.supplierText}>
-                  Wholesaler: {prod.organizationName || "Anagata Wholesale Hub"}
-                </Text>
+                  {/* Product Name */}
+                  <Text style={styles.productName}>{prod.name}</Text>
+                  <Text style={styles.supplierText}>
+                    Wholesaler: {prod.organizationName || "Anagata Wholesale Hub"}
+                  </Text>
+                </TouchableOpacity>
 
                 {/* SKUs List */}
                 {prod.skus?.map((sku: any) => {
@@ -297,7 +324,11 @@ export default function RetailerHomeScreen() {
 
                   return (
                     <View key={sku.id} style={styles.skuRow}>
-                      <View style={{ flex: 1, paddingRight: 8 }}>
+                      <TouchableOpacity
+                        style={{ flex: 1, paddingRight: 8 }}
+                        activeOpacity={0.7}
+                        onPress={() => setSelectedProduct(prod)}
+                      >
                         <Text style={styles.skuTitle}>{sku.unitTitle}</Text>
                         <Text style={styles.skuMoq}>MOQ: {sku.minimumOrderQuantity} units</Text>
                         <View style={{ flexDirection: "row", alignItems: "center", marginTop: 4 }}>
@@ -311,7 +342,7 @@ export default function RetailerHomeScreen() {
                             </Text>
                           </View>
                         </View>
-                      </View>
+                      </TouchableOpacity>
 
                       {/* Interactive Quantity Stepper */}
                       <View style={styles.stepperContainer}>
@@ -383,6 +414,19 @@ export default function RetailerHomeScreen() {
           </TouchableOpacity>
         </View>
       )}
+
+      {/* Product Detail Modal with Live Margin Calculator */}
+      <ProductDetailModal
+        visible={!!selectedProduct}
+        product={selectedProduct}
+        currentCartQty={
+          selectedProduct?.skus?.[0]
+            ? (cart[selectedProduct.skus[0].id] || 0)
+            : 0
+        }
+        onAddToCart={(skuId, qty) => setQuantityDirect(skuId, qty)}
+        onClose={() => setSelectedProduct(null)}
+      />
     </View>
   );
 }
@@ -621,5 +665,22 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 10
   },
-  btnCheckoutText: { color: "#ffffff", fontSize: 12, fontWeight: "bold" }
+  btnCheckoutText: { color: "#ffffff", fontSize: 12, fontWeight: "bold" },
+  cardHeaderTouchable: {
+    marginBottom: 6
+  },
+  inspectPill: {
+    backgroundColor: "rgba(99, 102, 241, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+    marginLeft: "auto"
+  },
+  inspectPillText: {
+    color: "#6366f1",
+    fontSize: 10,
+    fontWeight: "bold"
+  }
 });

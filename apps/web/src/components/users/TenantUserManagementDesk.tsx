@@ -24,8 +24,11 @@ import {
   CreditCard,
   Package,
   FileSpreadsheet,
-  Settings
+  Settings,
+  Edit2
 } from "lucide-react";
+import SlideOverDrawer from "../common/SlideOverDrawer";
+import EmptyState from "../common/EmptyState";
 export const UserPermission = {
   CAN_CREATE_BILLS: "CAN_CREATE_BILLS",
   CAN_VIEW_POS_CATALOG: "CAN_VIEW_POS_CATALOG",
@@ -113,8 +116,15 @@ export default function TenantUserManagementDesk({
   const [createdResult, setCreatedResult] = useState<any | null>(null);
   const [copiedKey, setCopiedKey] = useState(false);
 
+  // Profile View Drawer State
+  const [viewingUser, setViewingUser] = useState<TenantUser | null>(null);
+
   // Edit Permissions Modal State
   const [editingUser, setEditingUser] = useState<TenantUser | null>(null);
+  const [editName, setEditName] = useState("");
+  const [editStaffTitle, setEditStaffTitle] = useState("");
+  const [editRole, setEditRole] = useState("");
+  const [editStatus, setEditStatus] = useState<"ACTIVE" | "SUSPENDED" | "PENDING_KYC">("ACTIVE");
   const [editPermissions, setEditPermissions] = useState<string[]>([]);
   const [editQuickPin, setEditQuickPin] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
@@ -272,6 +282,10 @@ export default function TenantUserManagementDesk({
 
   const handleOpenEdit = (user: TenantUser) => {
     setEditingUser(user);
+    setEditName(user.name || "");
+    setEditStaffTitle(user.staffTitle || "");
+    setEditRole(user.role || (tenantType === "SELLER" ? "SELLER_STAFF" : "RETAILER_STAFF"));
+    setEditStatus(user.status || "ACTIVE");
     setEditPermissions([...user.permissions]);
     setEditQuickPin("");
   };
@@ -281,23 +295,39 @@ export default function TenantUserManagementDesk({
     setSavingEdit(true);
     try {
       const payload: any = {
+        name: editName,
+        title: editStaffTitle,
+        staffTitle: editStaffTitle,
+        role: editRole,
+        status: editStatus,
         permissions: editPermissions
       };
       if (editQuickPin.trim()) {
         payload.quickPin = editQuickPin.trim();
       }
 
-      const res = await fetch(`${apiBase}/api/tenant/users/${editingUser.id}`, {
+      // Try PUT /api/users/:id first, then fallback to PUT /api/tenant/users/:id
+      let res = await fetch(`${apiBase}/api/users/${editingUser.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      if (!res.ok) {
+        res = await fetch(`${apiBase}/api/tenant/users/${editingUser.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+      }
+
       if (res.ok) {
         setEditingUser(null);
-        fetchUsers();
+        await fetchUsers();
+      } else {
+        alert("Failed to update user profile");
       }
     } catch (err) {
-      alert("Failed to update user permissions");
+      alert("Failed to update user details");
     } finally {
       setSavingEdit(false);
     }
@@ -433,10 +463,14 @@ export default function TenantUserManagementDesk({
             Loading team directory...
           </div>
         ) : filteredUsers.length === 0 ? (
-          <div className="py-12 text-center text-xs text-slate-400">
-            <Users className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-            No staff members found matching criteria.
-          </div>
+          <EmptyState
+            icon={Users}
+            title="No Staff Members Found"
+            description="No team members match your search or status filter. Click below to onboard a new staff cashier or warehouse associate."
+            actionLabel={canManageUsers ? "Invite Staff Member" : undefined}
+            onAction={canManageUsers ? () => setIsInviteOpen(true) : undefined}
+            className="m-6 border-0 bg-transparent"
+          />
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-xs">
@@ -534,28 +568,42 @@ export default function TenantUserManagementDesk({
                       </td>
 
                       <td className="py-3.5 px-4 text-right">
-                        {canManageUsers && user.role !== "RETAILER" && user.role !== "SELLER_ADMIN" && (
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => handleOpenEdit(user)}
-                              className="px-2 py-1 text-[11px] bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded font-medium transition"
-                              title="Edit Permissions"
-                            >
-                              Permissions
-                            </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setViewingUser(user)}
+                            className="p-1.5 text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition"
+                            title="View Staff Profile & Permissions"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                          </button>
 
-                            <button
-                              onClick={() => handleToggleStatus(user)}
-                              className={`px-2 py-1 text-[11px] rounded font-medium transition ${
-                                user.status === "ACTIVE"
-                                  ? "bg-rose-50 dark:bg-rose-950 text-rose-600 hover:bg-rose-100"
-                                  : "bg-emerald-50 dark:bg-emerald-950 text-emerald-600 hover:bg-emerald-100"
-                              }`}
-                            >
-                              {user.status === "ACTIVE" ? "Suspend" : "Activate"}
-                            </button>
-                          </div>
-                        )}
+                          {canManageUsers && user.role !== "RETAILER" && user.role !== "SELLER_ADMIN" && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEdit(user)}
+                                className="px-2 py-1 text-[11px] bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-lg font-medium transition flex items-center gap-1"
+                                title="Edit Staff Member"
+                              >
+                                <Edit2 className="w-3 h-3" />
+                                Edit
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleToggleStatus(user)}
+                                className={`px-2 py-1 text-[11px] rounded-lg font-medium transition ${
+                                  user.status === "ACTIVE"
+                                    ? "bg-rose-50 dark:bg-rose-950 text-rose-600 hover:bg-rose-100"
+                                    : "bg-emerald-50 dark:bg-emerald-950 text-emerald-600 hover:bg-emerald-100"
+                                }`}
+                              >
+                                {user.status === "ACTIVE" ? "Suspend" : "Activate"}
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -853,26 +901,87 @@ export default function TenantUserManagementDesk({
         </div>
       )}
 
-      {/* Edit Permissions Modal */}
+      {/* ================= MODAL: EDIT USER PROFILE & PRIVILEGES ================= */}
       {editingUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-          <div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150 overflow-y-auto">
+          <div className="bg-white dark:bg-slate-900 w-full max-w-xl rounded-2xl border border-slate-200 dark:border-slate-800 shadow-2xl overflow-hidden max-h-[90vh] flex flex-col my-8">
             <div className="p-4 border-b border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white">
-                  Edit Privileges: {editingUser.name}
+                <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Edit2 className="w-4 h-4 text-indigo-600" />
+                  Edit Staff Member: {editingUser.name}
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  {editingUser.staffTitle || "Staff"} • {editingUser.phone}
+                  Update name, staff title, role, status, Quick-PIN, and granular privileges (PUT /api/users/:id)
                 </p>
               </div>
-              <button onClick={() => setEditingUser(null)} className="p-1 text-slate-400">✕</button>
+              <button onClick={() => setEditingUser(null)} className="p-1 text-slate-400 hover:text-slate-600">✕</button>
             </div>
 
-            <div className="p-5 space-y-4 overflow-y-auto">
+            <div className="p-5 space-y-4 overflow-y-auto text-xs">
+              {/* Profile Basic Info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={editName}
+                    onChange={(e) => setEditName(e.target.value)}
+                    required
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Staff Job Title
+                  </label>
+                  <input
+                    type="text"
+                    value={editStaffTitle}
+                    onChange={(e) => setEditStaffTitle(e.target.value)}
+                    placeholder="e.g. Head Billing Cashier"
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    System Role
+                  </label>
+                  <select
+                    value={editRole}
+                    onChange={(e) => setEditRole(e.target.value)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  >
+                    <option value="RETAILER_STAFF">Retailer Staff / Cashier</option>
+                    <option value="RETAILER">Retailer Proprietor</option>
+                    <option value="SELLER_STAFF">Seller Staff / Picker</option>
+                    <option value="SELLER_ADMIN">Seller Admin</option>
+                    <option value="SALES_AGENT">Field Sales Agent</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                    Account Status
+                  </label>
+                  <select
+                    value={editStatus}
+                    onChange={(e) => setEditStatus(e.target.value as any)}
+                    className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                  >
+                    <option value="ACTIVE">ACTIVE (Authorized)</option>
+                    <option value="SUSPENDED">SUSPENDED (Locked out)</option>
+                  </select>
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1">
-                  Reset 4-Digit Quick-PIN (Leave blank to keep unchanged)
+                <label className="block text-[11px] font-bold text-slate-700 dark:text-slate-300 mb-1">
+                  Reset 4-Digit Quick-PIN (Leave blank to keep current)
                 </label>
                 <input
                   type="password"
@@ -884,20 +993,34 @@ export default function TenantUserManagementDesk({
                 />
               </div>
 
-              <div className="space-y-2">
-                <div className="text-[11px] font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                  Granted Privileges ({editPermissions.length})
+              {/* Granular Permissions Matrix */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div className="text-[11px] font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider">
+                    Granted Privileges ({editPermissions.length} selected)
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setEditPermissions(Object.keys(PERMISSION_LABELS))}
+                    className="text-[11px] text-indigo-600 hover:underline font-semibold"
+                  >
+                    Select All
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto p-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-56 overflow-y-auto p-1">
                   {Object.entries(PERMISSION_LABELS).map(([permKey, permMeta]) => {
                     const isChecked = editPermissions.includes(permKey);
+                    const isMarginPrivacy = permKey === "CAN_VIEW_PROFIT_MARGINS";
+
                     return (
                       <label
                         key={permKey}
-                        className={`p-2 rounded-lg border flex items-start gap-2 cursor-pointer text-xs ${
+                        className={`p-2 rounded-lg border flex items-start gap-2 cursor-pointer text-xs transition ${
                           isChecked
-                            ? "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-800"
+                            ? isMarginPrivacy
+                              ? "bg-amber-50 dark:bg-amber-950/30 border-amber-300 dark:border-amber-800"
+                              : "bg-indigo-50 dark:bg-indigo-950/30 border-indigo-300 dark:border-indigo-800"
                             : "bg-slate-50 dark:bg-slate-800/30 border-slate-200 dark:border-slate-700 opacity-60"
                         }`}
                       >
@@ -908,8 +1031,15 @@ export default function TenantUserManagementDesk({
                           className="mt-0.5 rounded text-indigo-600"
                         />
                         <div>
-                          <div className="font-medium text-slate-900 dark:text-white">{permMeta.label}</div>
-                          <div className="text-[9px] text-slate-400">{permMeta.desc}</div>
+                          <div className="font-semibold text-slate-900 dark:text-white flex items-center gap-1">
+                            {permMeta.label}
+                            {isMarginPrivacy && (
+                              <span className="text-[9px] px-1 bg-rose-100 text-rose-700 font-bold rounded">
+                                CRITICAL
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[9px] text-slate-400 mt-0.5">{permMeta.desc}</div>
                         </div>
                       </label>
                     );
@@ -920,21 +1050,196 @@ export default function TenantUserManagementDesk({
 
             <div className="p-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-end gap-3">
               <button
+                type="button"
                 onClick={() => setEditingUser(null)}
-                className="px-4 py-1.5 text-xs text-slate-600 font-semibold"
+                className="px-4 py-2 text-xs text-slate-600 dark:text-slate-400 font-semibold hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleSaveEdit}
                 disabled={savingEdit}
-                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl"
+                className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5 transition disabled:opacity-50"
               >
-                {savingEdit ? "Saving..." : "Update Privileges"}
+                {savingEdit ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle2 className="w-3.5 h-3.5" />}
+                Save Changes (PUT /api)
               </button>
             </div>
           </div>
         </div>
+      )}
+
+      {/* ================= DRAWER: VIEW USER PROFILE ================= */}
+      {viewingUser && (
+        <SlideOverDrawer
+          isOpen={!!viewingUser}
+          onClose={() => setViewingUser(null)}
+          width="max-w-2xl"
+          icon={Users}
+          title={
+            <div className="flex items-center gap-2">
+              <span>{viewingUser.name}</span>
+              <span
+                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                  viewingUser.status === "ACTIVE"
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                    : "bg-rose-100 text-rose-800 border border-rose-200"
+                }`}
+              >
+                {viewingUser.status}
+              </span>
+            </div>
+          }
+          subtitle={`${viewingUser.staffTitle || "General Staff"} • Role: ${viewingUser.role}`}
+          footer={
+            <div className="flex items-center justify-between gap-3">
+              {canManageUsers && viewingUser.role !== "RETAILER" && viewingUser.role !== "SELLER_ADMIN" && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const u = viewingUser;
+                    setViewingUser(null);
+                    handleOpenEdit(u);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5 transition"
+                >
+                  <Edit2 className="w-3.5 h-3.5" />
+                  Edit User Profile
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setViewingUser(null)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold rounded-xl transition ml-auto"
+              >
+                Close
+              </button>
+            </div>
+          }
+        >
+          {/* Identity & Facility Card */}
+          <div className="bg-slate-50 dark:bg-slate-850 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-700 pb-3">
+              <div>
+                <span className="text-[10px] font-mono text-slate-400">ID: {viewingUser.id}</span>
+                <h4 className="font-bold text-slate-900 dark:text-white text-base mt-0.5">{viewingUser.name}</h4>
+                <div className="text-xs text-slate-500 mt-0.5">{viewingUser.staffTitle || "Staff"} • {viewingUser.phone}</div>
+              </div>
+              <div className="text-right">
+                <span className="px-2.5 py-1 bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300 rounded-lg text-xs font-bold font-mono">
+                  {viewingUser.role}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Assigned Tenant</span>
+                <div className="font-semibold text-slate-900 dark:text-white text-xs mt-0.5">{tenantName}</div>
+                <div className="text-[10px] text-slate-500">{tenantType} Facility</div>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700">
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Quick-PIN Status</span>
+                <div className="font-semibold text-slate-900 dark:text-white text-xs mt-0.5 flex items-center gap-1">
+                  {viewingUser.quickPinSet ? (
+                    <span className="text-emerald-600 font-bold flex items-center gap-1">
+                      <Key className="w-3 h-3 text-emerald-500" /> Active (Configured)
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 italic">Not set</span>
+                  )}
+                </div>
+              </div>
+              <div className="bg-white dark:bg-slate-800 p-3 rounded-xl border border-slate-200 dark:border-slate-700 col-span-2 sm:col-span-1">
+                <span className="text-[10px] text-slate-400 uppercase font-bold">Member Since</span>
+                <div className="font-semibold text-slate-900 dark:text-white text-xs mt-0.5">
+                  {viewingUser.createdAt ? new Date(viewingUser.createdAt).toLocaleDateString("en-IN") : "Founding Member"}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Domain Grouped Permissions Checklist */}
+          <div className="bg-white dark:bg-slate-900 p-4 sm:p-5 rounded-2xl border border-slate-200 dark:border-slate-800 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <Shield className="w-4 h-4 text-indigo-600" />
+                Granular Permissions Checklist ({viewingUser.permissions.length} granted)
+              </h4>
+              {viewingUser.permissions.includes(UserPermission.CAN_VIEW_PROFIT_MARGINS) ? (
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <Eye className="w-3 h-3" /> Margin Visible
+                </span>
+              ) : (
+                <span className="text-[10px] font-bold text-rose-700 bg-rose-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                  <EyeOff className="w-3 h-3" /> Margin Shielded
+                </span>
+              )}
+            </div>
+
+            {/* Grouped by Domain */}
+            {Array.from(new Set(Object.values(PERMISSION_LABELS).map((p) => p.group))).map((groupName) => {
+              const groupPerms = Object.entries(PERMISSION_LABELS).filter(([_, meta]) => meta.group === groupName);
+
+              return (
+                <div key={groupName} className="space-y-1.5">
+                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 border-b border-slate-100 dark:border-slate-800 pb-1">
+                    {groupName}
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {groupPerms.map(([permKey, permMeta]) => {
+                      const hasPerm = viewingUser.permissions.includes(permKey);
+                      return (
+                        <div
+                          key={permKey}
+                          className={`p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                            hasPerm
+                              ? "bg-indigo-50/50 dark:bg-indigo-950/30 border-indigo-200 dark:border-indigo-800"
+                              : "bg-slate-50/50 dark:bg-slate-850/50 border-slate-100 dark:border-slate-800 opacity-40"
+                          }`}
+                        >
+                          {hasPerm ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                          )}
+                          <div>
+                            <div className={`font-semibold ${hasPerm ? "text-slate-900 dark:text-white" : "text-slate-500"}`}>
+                              {permMeta.label}
+                            </div>
+                            <div className="text-[10px] text-slate-400 mt-0.5">{permMeta.desc}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Security & Audit Log */}
+          <div className="bg-slate-50 dark:bg-slate-850 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+            <h4 className="font-bold text-[11px] uppercase tracking-wider text-slate-500">
+              Security Audit Trail
+            </h4>
+            <div className="space-y-1.5 text-slate-600 dark:text-slate-400 text-[11px]">
+              <div className="flex justify-between">
+                <span>Account Created:</span>
+                <span className="font-mono">{viewingUser.createdAt ? new Date(viewingUser.createdAt).toLocaleString("en-IN") : "Initial Seed"}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>WhatsApp Provisioning:</span>
+                <span className="text-emerald-600 font-semibold">Dispatched via Evolution API</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Last Authorized Session:</span>
+                <span className="font-mono">{viewingUser.lastLoginAt ? new Date(viewingUser.lastLoginAt).toLocaleString("en-IN") : "Active Session"}</span>
+              </div>
+            </div>
+          </div>
+        </SlideOverDrawer>
       )}
     </div>
   );

@@ -22,8 +22,18 @@ import {
   Copy,
   KeyRound,
   ShieldAlert,
-  Navigation
+  Navigation,
+  Edit2,
+  ExternalLink,
+  FileText,
+  Camera,
+  ShoppingBag,
+  Store,
+  RefreshCw,
+  ShieldCheck
 } from "lucide-react";
+import SlideOverDrawer from "../common/SlideOverDrawer";
+import EmptyState from "../common/EmptyState";
 
 interface AgentCrmDashboardProps {
   apiBase: string;
@@ -44,6 +54,18 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
   const [stageFilter, setStageFilter] = useState<string>("ALL");
   const [selectedRetailer360, setSelectedRetailer360] = useState<any | null>(null);
   const [isRetailer360Open, setIsRetailer360Open] = useState(false);
+
+  // Edit Store State & Modal
+  const [isEditStoreOpen, setIsEditStoreOpen] = useState(false);
+  const [editingStore, setEditingStore] = useState<any | null>(null);
+  const [editStoreName, setEditStoreName] = useState("");
+  const [editOwnerName, setEditOwnerName] = useState("");
+  const [editStorePhone, setEditStorePhone] = useState("");
+  const [editStoreAddress, setEditStoreAddress] = useState("");
+  const [editCreditLimit, setEditCreditLimit] = useState(50000);
+  const [editPaymentTerms, setEditPaymentTerms] = useState("NET_7");
+  const [savingEditStore, setSavingEditStore] = useState(false);
+  const [editStoreError, setEditStoreError] = useState<string | null>(null);
 
   // New Store Onboarding Modal
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
@@ -211,6 +233,61 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
       setIsRetailer360Open(true);
     } catch (e: any) {
       alert("Error fetching 360 profile: " + e.message);
+    }
+  };
+
+  // Open Edit Store Modal
+  const handleOpenEditStore = (store: any) => {
+    const ret = store.retailer || store;
+    setEditingStore(ret);
+    setEditStoreName(ret.shopName || ret.storeName || "");
+    setEditOwnerName(ret.ownerName || "");
+    setEditStorePhone(ret.phone || "");
+    setEditStoreAddress(ret.address || "");
+    setEditCreditLimit(ret.creditLimit || 50000);
+    setEditPaymentTerms(ret.paymentTerm || ret.paymentTerms || "NET_7");
+    setEditStoreError(null);
+    setIsEditStoreOpen(true);
+  };
+
+  // Save Store Edit calling PUT /api/retailers/:id
+  const handleSaveStoreEdit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingStore?.id) return;
+    setSavingEditStore(true);
+    setEditStoreError(null);
+
+    const payload = {
+      storeName: editStoreName,
+      shopName: editStoreName,
+      ownerName: editOwnerName,
+      phone: editStorePhone,
+      address: editStoreAddress,
+      creditLimit: Number(editCreditLimit),
+      paymentTerms: editPaymentTerms,
+      paymentTerm: editPaymentTerms
+    };
+
+    try {
+      const res = await fetch(`${apiBase}/api/retailers/${editingStore.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      }).then((r) => r.json());
+
+      if (res.success || res.retailer) {
+        setIsEditStoreOpen(false);
+        await loadCrmData();
+        if (selectedRetailer360?.retailer?.id === editingStore.id) {
+          await handleOpen360(editingStore.id);
+        }
+      } else {
+        setEditStoreError(res.error || "Failed to update store details");
+      }
+    } catch (err: any) {
+      setEditStoreError("Network error updating store profile");
+    } finally {
+      setSavingEditStore(false);
     }
   };
 
@@ -429,70 +506,91 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
           </div>
 
           {/* Leads Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {filteredLeads.map((lead) => (
-              <div
-                key={lead.id}
-                className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition space-y-4 flex flex-col justify-between"
-              >
-                <div>
-                  <div className="flex items-start justify-between gap-2">
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-base">{lead.shopName}</h4>
-                      <div className="text-xs text-slate-500 mt-0.5">{lead.ownerName} • {lead.phone}</div>
-                    </div>
-                    <span
-                      className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        lead.leadStage === "ACTIVE_BUYER"
-                          ? "bg-emerald-100 text-emerald-800"
-                          : lead.leadStage === "PROSPECT"
-                          ? "bg-blue-100 text-blue-800"
-                          : lead.leadStage === "KYC_PENDING"
-                          ? "bg-amber-100 text-amber-800"
-                          : "bg-slate-100 text-slate-800"
-                      }`}
-                    >
-                      {lead.leadStage}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 text-xs text-slate-600 space-y-1">
-                    <div>{lead.address}, {lead.city}</div>
-                    <div className="flex justify-between items-center pt-2 border-t border-slate-100">
-                      <span className="text-slate-500">Credit Limit:</span>
-                      <span className="font-bold text-slate-800">₹{lead.creditLimit?.toLocaleString("en-IN")}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Outstanding Dues:</span>
-                      <span className={`font-bold ${lead.creditDues > 0 ? "text-amber-600" : "text-emerald-600"}`}>
-                        ₹{lead.creditDues?.toLocaleString("en-IN")}
+          {filteredLeads.length === 0 ? (
+            <EmptyState
+              icon={Store}
+              title="No Retailer Leads Found"
+              description="No kirana stores match this stage filter. Onboard a new lead or clear your filter to view registered retail stores."
+              actionLabel="Onboard Kirana Lead"
+              onAction={() => setIsNewLeadModalOpen(true)}
+            />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+              {filteredLeads.map((lead) => (
+                <div
+                  key={lead.id}
+                  className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition space-y-4 flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <h4 className="font-bold text-slate-900 text-base">{lead.shopName}</h4>
+                        <div className="text-xs text-slate-500 mt-0.5">{lead.ownerName} • {lead.phone}</div>
+                      </div>
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          lead.leadStage === "ACTIVE_BUYER"
+                            ? "bg-emerald-100 text-emerald-800"
+                            : lead.leadStage === "PROSPECT"
+                            ? "bg-blue-100 text-blue-800"
+                            : lead.leadStage === "KYC_PENDING"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-slate-100 text-slate-800"
+                        }`}
+                      >
+                        {lead.leadStage}
                       </span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-slate-500">Payment Term:</span>
-                      <span className="font-semibold text-indigo-600">{lead.paymentTerm}</span>
+
+                    <div className="mt-3 text-xs text-slate-600 space-y-1">
+                      <div>{lead.address}, {lead.city}</div>
+                      <div className="flex justify-between items-center pt-2 border-t border-slate-100">
+                        <span className="text-slate-500">Credit Limit:</span>
+                        <span className="font-bold text-slate-800">₹{lead.creditLimit?.toLocaleString("en-IN")}</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Outstanding Dues:</span>
+                        <span className={`font-bold ${lead.creditDues > 0 ? "text-amber-600" : "text-emerald-600"}`}>
+                          ₹{lead.creditDues?.toLocaleString("en-IN")}
+                        </span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-slate-500">Payment Term:</span>
+                        <span className="font-semibold text-indigo-600">{lead.paymentTerm}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                  <button
-                    onClick={() => handleOpen360(lead.id)}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
-                  >
-                    360° Profile
-                  </button>
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpen360(lead.id)}
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800"
+                      >
+                        360° Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditStore(lead)}
+                        className="text-xs font-bold text-slate-600 hover:text-slate-900 flex items-center gap-1"
+                      >
+                        <Edit2 className="w-3 h-3 text-slate-500" /> Edit
+                      </button>
+                    </div>
 
-                  <button
-                    onClick={() => handleAdvanceStage(lead.id, lead.leadStage)}
-                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1 transition"
-                  >
-                    Advance <ArrowRight className="w-3 h-3" />
-                  </button>
+                    <button
+                      type="button"
+                      onClick={() => handleAdvanceStage(lead.id, lead.leadStage)}
+                      className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1 transition"
+                    >
+                      Advance <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -594,64 +692,295 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
         </div>
       )}
 
-      {/* ================= MODAL: 360° RETAILER PROFILE ================= */}
+      {/* ================= DRAWER: 360° RETAILER PROFILE ================= */}
       {isRetailer360Open && selectedRetailer360 && (
-        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full p-6 space-y-6">
-            <div className="flex justify-between items-start border-b border-slate-200 pb-3">
-              <div>
-                <h3 className="font-bold text-lg text-slate-900">{selectedRetailer360.retailer?.shopName}</h3>
-                <div className="text-xs text-slate-500">{selectedRetailer360.retailer?.ownerName} • {selectedRetailer360.retailer?.address}</div>
+        <SlideOverDrawer
+          isOpen={isRetailer360Open}
+          onClose={() => setIsRetailer360Open(false)}
+          width="max-w-2xl"
+          icon={Store}
+          title={
+            <div className="flex items-center gap-2">
+              <span>{selectedRetailer360.retailer?.shopName || selectedRetailer360.retailer?.storeName}</span>
+              <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                VERIFIED KIRANA
+              </span>
+            </div>
+          }
+          subtitle={`Proprietor: ${selectedRetailer360.retailer?.ownerName} • Phone: ${selectedRetailer360.retailer?.phone}`}
+          footer={
+            <div className="flex items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  const s = selectedRetailer360;
+                  handleOpenEditStore(s);
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow flex items-center gap-1.5 transition"
+              >
+                <Edit2 className="w-3.5 h-3.5" />
+                Edit Store Details
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsRetailer360Open(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-semibold rounded-xl transition"
+              >
+                Close Profile
+              </button>
+            </div>
+          }
+        >
+          {/* Storefront & Document Showcase */}
+          <div className="bg-slate-50 p-4 sm:p-5 rounded-2xl border border-slate-200 space-y-4">
+            <div className="flex items-start gap-4">
+              <div className="w-20 h-20 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-black text-xl shadow-md shrink-0">
+                <Store className="w-10 h-10 opacity-90" />
               </div>
-              <button onClick={() => setIsRetailer360Open(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-800">
+              <div className="space-y-1 text-xs">
+                <div className="font-bold text-slate-900 text-sm">
+                  {selectedRetailer360.retailer?.shopName}
+                </div>
+                <div className="text-slate-600">
+                  <strong className="text-slate-700">Proprietor:</strong> {selectedRetailer360.retailer?.ownerName}
+                </div>
+                <div className="text-slate-600">
+                  <strong className="text-slate-700">Address:</strong> {selectedRetailer360.retailer?.address}, {selectedRetailer360.retailer?.city || "Lucknow"}
+                </div>
+                <div className="text-slate-500 flex items-center gap-2 pt-1">
+                  <span>OpenStreetMap GPS:</span>
+                  <a
+                    href={`https://www.openstreetmap.org/?mlat=${selectedRetailer360.retailer?.latitude || 26.8520}&mlon=${selectedRetailer360.retailer?.longitude || 80.9510}#map=18/${selectedRetailer360.retailer?.latitude || 26.8520}/${selectedRetailer360.retailer?.longitude || 80.9510}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-600 hover:underline font-mono font-bold flex items-center gap-1"
+                  >
+                    {selectedRetailer360.retailer?.latitude || 26.8520}, {selectedRetailer360.retailer?.longitude || 80.9510}
+                    <ExternalLink className="w-3 h-3" />
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* Document Preview Row */}
+            <div className="pt-3 border-t border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-700">Verification Docs:</span>
+                <span className="px-2 py-0.5 bg-white border border-slate-200 rounded font-mono text-[11px] text-slate-800">
+                  GSTIN: {selectedRetailer360.retailer?.gstin || selectedRetailer360.retailer?.panOrUdyam || "09AABCG1234F1Z5"}
+                </span>
+              </div>
+              <a
+                href={selectedRetailer360.retailer?.kycDocUrl || "https://b2b.anagataitsolutions.in"}
+                target="_blank"
+                rel="noreferrer"
+                className="text-indigo-600 hover:underline font-bold flex items-center gap-1 text-[11px]"
+              >
+                <FileText className="w-3.5 h-3.5" /> View MinIO Certificate &rarr;
+              </a>
+            </div>
+          </div>
+
+          {/* Credit Status Cards */}
+          <div className="grid grid-cols-3 gap-3 bg-white p-4 rounded-xl border border-slate-200 text-center">
+            <div>
+              <div className="text-[10px] text-slate-500 uppercase font-bold">Credit Limit</div>
+              <div className="text-base font-black text-slate-900 mt-0.5">
+                ₹{(selectedRetailer360.retailer?.creditLimit || 50000).toLocaleString("en-IN")}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500 uppercase font-bold">Outstanding Dues</div>
+              <div className="text-base font-black text-amber-600 mt-0.5">
+                ₹{(selectedRetailer360.retailer?.creditDues || 0).toLocaleString("en-IN")}
+              </div>
+            </div>
+            <div>
+              <div className="text-[10px] text-slate-500 uppercase font-bold">Available Credit</div>
+              <div className="text-base font-black text-emerald-600 mt-0.5">
+                ₹{(selectedRetailer360.retailer?.availableCredit || 50000).toLocaleString("en-IN")}
+              </div>
+            </div>
+          </div>
+
+          {/* Lifetime Orders History */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+            <div className="flex justify-between items-center">
+              <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <ShoppingBag className="w-4 h-4 text-indigo-600" />
+                Lifetime Orders History ({selectedRetailer360.orders?.length || 0})
+              </h4>
+              <span className="text-[11px] font-mono text-slate-500">
+                Terms: <strong className="text-slate-800">{selectedRetailer360.retailer?.paymentTerm || "NET_7"}</strong>
+              </span>
+            </div>
+
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {(!selectedRetailer360.orders || selectedRetailer360.orders.length === 0) ? (
+                <div className="text-xs text-slate-400 py-3 text-center">No orders placed yet</div>
+              ) : (
+                selectedRetailer360.orders.map((ord: any) => (
+                  <div key={ord.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900">#{ord.orderNumber || ord.id}</div>
+                      <div className="text-[11px] text-slate-500">
+                        {ord.createdAt ? new Date(ord.createdAt).toLocaleDateString("en-IN") : "Recent"} • {ord.itemsCount || 3} items
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-black text-slate-900">₹{(ord.totalAmount || 1850).toLocaleString("en-IN")}</div>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
+                        {ord.status || "DELIVERED"}
+                      </span>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Notes & Activity History */}
+          <div className="bg-white p-4 rounded-xl border border-slate-200 space-y-3">
+            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+              <MessageSquare className="w-4 h-4 text-indigo-600" />
+              Recent CRM Visits & Field Notes
+            </h4>
+            <div className="space-y-2 max-h-44 overflow-y-auto">
+              {(!selectedRetailer360.notes || selectedRetailer360.notes.length === 0) ? (
+                <div className="text-xs text-slate-400 py-3 text-center">No field notes recorded yet</div>
+              ) : (
+                selectedRetailer360.notes.map((n: any) => (
+                  <div key={n.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                    <div className="flex justify-between font-bold text-slate-800">
+                      <span>{n.type} by {n.agentName}</span>
+                      <span className="text-[10px] text-slate-400 font-normal">
+                        {new Date(n.createdAt).toLocaleDateString("en-IN")}
+                      </span>
+                    </div>
+                    <div className="text-slate-600 mt-1">{n.summary}</div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </SlideOverDrawer>
+      )}
+
+      {/* ================= MODAL: EDIT STORE DETAILS ================= */}
+      {isEditStoreOpen && editingStore && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5">
+            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
+              <div>
+                <h3 className="font-bold text-base text-slate-900">Edit Kirana Store Profile</h3>
+                <p className="text-xs text-slate-500 mt-0.5">Persists to database via PUT /api/retailers/:id</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsEditStoreOpen(false)}
+                className="text-slate-400 hover:text-slate-700"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Credit Status Cards */}
-            <div className="grid grid-cols-3 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200 text-center">
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase font-bold">Credit Limit</div>
-                <div className="text-sm font-black text-slate-900">₹{selectedRetailer360.retailer?.creditLimit?.toLocaleString("en-IN")}</div>
+            {editStoreError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{editStoreError}</span>
               </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase font-bold">Outstanding Dues</div>
-                <div className="text-sm font-black text-amber-600">₹{selectedRetailer360.retailer?.creditDues?.toLocaleString("en-IN")}</div>
-              </div>
-              <div>
-                <div className="text-[10px] text-slate-500 uppercase font-bold">Available Credit</div>
-                <div className="text-sm font-black text-emerald-600">₹{selectedRetailer360.retailer?.availableCredit?.toLocaleString("en-IN")}</div>
-              </div>
-            </div>
+            )}
 
-            {/* Notes & Activity History */}
-            <div className="space-y-3">
-              <h4 className="font-bold text-sm text-slate-900">Recent CRM Visit & Activity Notes</h4>
-              <div className="space-y-2 max-h-44 overflow-y-auto">
-                {selectedRetailer360.notes?.length === 0 ? (
-                  <div className="text-xs text-slate-400">No notes recorded yet</div>
-                ) : (
-                  selectedRetailer360.notes?.map((n: any) => (
-                    <div key={n.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
-                      <div className="flex justify-between font-bold text-slate-800">
-                        <span>{n.type} by {n.agentName}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">
-                          {new Date(n.createdAt).toLocaleDateString("en-IN")}
-                        </span>
-                      </div>
-                      <div className="text-slate-600 mt-1">{n.summary}</div>
-                    </div>
-                  ))
-                )}
+            <form onSubmit={handleSaveStoreEdit} className="space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Store / Shop Name</label>
+                <input
+                  type="text"
+                  value={editStoreName}
+                  onChange={(e) => setEditStoreName(e.target.value)}
+                  required
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
               </div>
-            </div>
 
-            <button
-              onClick={() => setIsRetailer360Open(false)}
-              className="w-full py-2.5 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition"
-            >
-              Close Profile
-            </button>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Owner / Proprietor</label>
+                  <input
+                    type="text"
+                    value={editOwnerName}
+                    onChange={(e) => setEditOwnerName(e.target.value)}
+                    required
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Contact Phone</label>
+                  <input
+                    type="text"
+                    value={editStorePhone}
+                    onChange={(e) => setEditStorePhone(e.target.value)}
+                    required
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Store Physical Address</label>
+                <input
+                  type="text"
+                  value={editStoreAddress}
+                  onChange={(e) => setEditStoreAddress(e.target.value)}
+                  required
+                  className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Credit Limit (₹)</label>
+                  <input
+                    type="number"
+                    value={editCreditLimit}
+                    onChange={(e) => setEditCreditLimit(Number(e.target.value))}
+                    required
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Payment Terms</label>
+                  <select
+                    value={editPaymentTerms}
+                    onChange={(e) => setEditPaymentTerms(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500"
+                  >
+                    <option value="COD">Cash on Delivery (COD)</option>
+                    <option value="NET_7">NET 7 Days</option>
+                    <option value="NET_15">NET 15 Days</option>
+                    <option value="NET_30">NET 30 Days</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsEditStoreOpen(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-700 font-semibold rounded-xl hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingEditStore}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow flex items-center gap-1.5 transition disabled:opacity-50"
+                >
+                  {savingEditStore ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Save Store Details
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

@@ -622,6 +622,99 @@ async function startServer() {
     };
   });
 
+  // Universal User Profile & Registry Endpoints
+  server.get("/api/users/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const user = store.users.find((u) => u.id === id || u.loginId === id || u.phone === id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: "User not found" });
+    }
+
+    const organization = user.organizationId
+      ? store.organizations.find((o) => o.id === user.organizationId)
+      : store.organizations.find((o) => o.ownerId === user.id);
+
+    const retailer = user.retailerId
+      ? store.retailers.find((r) => r.id === user.retailerId)
+      : store.retailers.find((r) => r.userId === user.id);
+
+    const auditLogs = store.auditLogs.filter((a) => a.userId === user.id || a.details?.subUserId === user.id || a.details?.targetUserId === user.id).slice(0, 50);
+
+    return {
+      success: true,
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email || `${user.loginId || user.id}@b2b-aggregator.local`,
+        loginId: user.loginId,
+        role: user.role,
+        title: user.staffTitle || user.role,
+        staffTitle: user.staffTitle,
+        status: user.status,
+        permissions: user.permissions || [],
+        organizationId: user.organizationId,
+        organizationName: organization?.name,
+        retailerId: user.retailerId,
+        retailerShopName: retailer?.shopName,
+        quickPinSet: !!user.quickPin,
+        lastLoginAt: user.lastLoginAt,
+        createdAt: user.createdAt,
+        auditLog: auditLogs,
+        auditLogs
+      }
+    };
+  });
+
+  server.put("/api/users/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body || {}) as any;
+
+    const user = store.users.find((u) => u.id === id || u.loginId === id);
+    if (!user) {
+      return reply.status(404).send({ success: false, error: "User not found" });
+    }
+
+    if (body.name) user.name = body.name;
+    if (body.phone) user.phone = body.phone;
+    if (body.email) user.email = body.email;
+    if (body.staffTitle || body.title) user.staffTitle = body.staffTitle || body.title;
+    if (body.role) user.role = body.role;
+    if (body.permissions && Array.isArray(body.permissions)) user.permissions = body.permissions;
+    if (body.status) user.status = body.status;
+    if (body.organizationId !== undefined) user.organizationId = body.organizationId;
+    if (body.retailerId !== undefined) user.retailerId = body.retailerId;
+    if (body.quickPin !== undefined) user.quickPin = body.quickPin;
+    if (body.password) user.password = body.password;
+
+    store.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "USER_UPDATED",
+      details: { updatedFields: Object.keys(body).filter((k) => k !== "password") }
+    });
+
+    return {
+      success: true,
+      message: "User updated successfully",
+      user: {
+        id: user.id,
+        name: user.name,
+        phone: user.phone,
+        email: user.email || `${user.loginId || user.id}@b2b-aggregator.local`,
+        loginId: user.loginId,
+        role: user.role,
+        title: user.staffTitle || user.role,
+        staffTitle: user.staffTitle,
+        status: user.status,
+        permissions: user.permissions || [],
+        organizationId: user.organizationId,
+        retailerId: user.retailerId
+      }
+    };
+  });
+
   server.post("/api/admin/impersonate", async (req: FastifyRequest, reply: FastifyReply) => {
     const { targetUserId } = req.body as any;
     const targetUser = store.users.find((u) => u.id === targetUserId);
@@ -1869,6 +1962,143 @@ async function startServer() {
     return reply.status(404).send({ error: "Sub-order not found for E-Way Bill payload generation" });
   });
 
+  // Universal Order Details & Status PATCH Endpoints
+  server.get("/api/orders/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+
+    // 1. Check if matching master order
+    const masterOrder = store.masterOrders.find((mo) => mo.id === id || mo.orderNumber === id);
+    if (masterOrder) {
+      const retailer = store.retailers.find((r) => r.id === masterOrder.retailerId);
+      const enrichedSubOrders = masterOrder.subOrders.map((so) => {
+        const org = store.organizations.find((o) => o.id === so.organizationId);
+        if (!so.invoice && org && retailer) {
+          so.invoice = generateGstInvoice(so, masterOrder, org, retailer);
+        }
+        return {
+          ...so,
+          sellerOrganization: org || null
+        };
+      });
+
+      return {
+        success: true,
+        orderType: "MASTER_ORDER",
+        order: {
+          ...masterOrder,
+          retailer: retailer || null,
+          subOrders: enrichedSubOrders
+        }
+      };
+    }
+
+    // 2. Check if matching sub-order
+    for (const mo of store.masterOrders) {
+      const subOrder = mo.subOrders.find((so) => so.id === id);
+      if (subOrder) {
+        const retailer = store.retailers.find((r) => r.id === mo.retailerId);
+        const sellerOrg = store.organizations.find((o) => o.id === subOrder.organizationId);
+        if (!subOrder.invoice && sellerOrg && retailer) {
+          subOrder.invoice = generateGstInvoice(subOrder, mo, sellerOrg, retailer);
+        }
+        let ewayBillPayload = null;
+        if (sellerOrg && retailer) {
+          try {
+            ewayBillPayload = generateEWayBillPayload(subOrder, sellerOrg, retailer);
+          } catch (e) {}
+        }
+        return {
+          success: true,
+          orderType: "SUB_ORDER",
+          order: {
+            ...subOrder,
+            masterOrderId: mo.id,
+            masterOrderNumber: mo.orderNumber,
+            placedByAgentId: mo.placedByAgentId,
+            placedByAgentName: mo.placedByAgentName,
+            retailer: retailer || null,
+            sellerOrganization: sellerOrg || null,
+            ewayBillPayload
+          }
+        };
+      }
+    }
+
+    return reply.status(404).send({ success: false, error: "Order not found" });
+  });
+
+  server.patch("/api/orders/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body || {}) as any;
+
+    // 1. Check if matching master order
+    const masterOrder = store.masterOrders.find((mo) => mo.id === id || mo.orderNumber === id);
+    if (masterOrder) {
+      if (body.status) masterOrder.status = body.status;
+      if (body.paymentStatus) masterOrder.paymentStatus = body.paymentStatus;
+      return { success: true, message: "Master order updated", order: masterOrder };
+    }
+
+    // 2. Check if matching sub-order
+    for (const mo of store.masterOrders) {
+      const subOrder = mo.subOrders.find((so) => so.id === id);
+      if (subOrder) {
+        const oldStatus = subOrder.status;
+
+        if (body.status) {
+          subOrder.status = body.status;
+          const now = new Date().toISOString();
+
+          if (body.status === "DISPATCHED" && oldStatus !== "DISPATCHED") {
+            subOrder.dispatchTime = now;
+            const step = subOrder.trackingHistory?.find((s) => s.status === "DISPATCHED");
+            if (step) { step.completed = true; step.timestamp = now; }
+          }
+
+          if (body.status === "DELIVERED" && oldStatus !== "DELIVERED") {
+            subOrder.deliveryTime = now;
+            if (subOrder.dispatchTime) {
+              const dispatchMs = new Date(subOrder.dispatchTime).getTime();
+              subOrder.transitDurationMinutes = Math.max(1, Math.round((new Date(now).getTime() - dispatchMs) / 60000));
+            } else {
+              subOrder.transitDurationMinutes = 15;
+            }
+            const step = subOrder.trackingHistory?.find((s) => s.status === "DELIVERED");
+            if (step) { step.completed = true; step.timestamp = now; }
+          }
+
+          if (body.status === "PACKED") {
+            const step = subOrder.trackingHistory?.find((s) => s.status === "PACKED");
+            if (step) { step.completed = true; step.timestamp = now; }
+          }
+        }
+
+        if (body.deliveryNotes !== undefined) subOrder.deliveryNotes = body.deliveryNotes;
+        if (body.deliveryOtp) subOrder.deliveryOtp = String(body.deliveryOtp);
+        if (body.paymentStatus) subOrder.paymentStatus = body.paymentStatus;
+        if (body.paymentTerm) subOrder.paymentTerm = body.paymentTerm;
+
+        // Recalculate master order aggregated status
+        const allDelivered = mo.subOrders.every((s) => s.status === "DELIVERED");
+        const anyDispatched = mo.subOrders.some((s) => s.status === "DISPATCHED" || s.status === "DELIVERED");
+        const allCancelled = mo.subOrders.every((s) => s.status === "CANCELLED");
+
+        if (allDelivered) mo.status = "COMPLETED";
+        else if (allCancelled) mo.status = "CANCELLED";
+        else if (anyDispatched) mo.status = "PARTIALLY_DELIVERED";
+
+        return {
+          success: true,
+          message: "Sub-order updated successfully",
+          order: subOrder,
+          masterOrderStatus: mo.status
+        };
+      }
+    }
+
+    return reply.status(404).send({ success: false, error: "Order not found" });
+  });
+
   // 10. Delivery & 4-Digit OTP Hand-Off
   server.post("/api/delivery/dispatch", async (req: FastifyRequest, reply: FastifyReply) => {
     const { subOrderId } = req.body as any;
@@ -2117,6 +2347,112 @@ async function startServer() {
     };
   });
 
+  // RESTful Retailers Directory & Store Lead Endpoints
+  server.get("/api/retailers", async (req: FastifyRequest) => {
+    const query = req.query as any;
+    let list = [...store.retailers];
+
+    if (query.leadStage) list = list.filter((r) => r.leadStage === query.leadStage);
+    if (query.assignedAgentId) list = list.filter((r) => r.assignedAgentId === query.assignedAgentId);
+    if (query.kycStatus) list = list.filter((r) => r.kycStatus === query.kycStatus);
+    if (query.city) list = list.filter((r) => r.city.toLowerCase() === query.city.toLowerCase());
+
+    return { success: true, count: list.length, retailers: list };
+  });
+
+  server.get("/api/retailers/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const retailer = store.retailers.find((r) => r.id === id || r.userId === id);
+    if (!retailer) {
+      return reply.status(404).send({ success: false, error: "Retailer not found" });
+    }
+
+    const orderHistory = store.masterOrders.filter((mo) => mo.retailerId === retailer.id);
+    const visits = store.visits.filter((v) => v.retailerId === retailer.id);
+    const notes = store.crmNotes.filter((n) => n.retailerId === retailer.id);
+    const payments = store.crmPayments.filter((p) => p.retailerId === retailer.id);
+
+    return {
+      success: true,
+      retailer: {
+        ...retailer,
+        storeName: retailer.shopName,
+        availableCredit: Math.max(0, retailer.creditLimit - retailer.creditDues),
+        ordersCount: orderHistory.length,
+        lifetimeValue: Math.round(orderHistory.reduce((acc, o) => acc + o.totalAmount, 0) * 100) / 100,
+        orderHistory,
+        visits,
+        notes,
+        payments
+      }
+    };
+  });
+
+  server.put("/api/retailers/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body || {}) as any;
+
+    const retailer = store.retailers.find((r) => r.id === id || r.userId === id);
+    if (!retailer) {
+      return reply.status(404).send({ success: false, error: "Retailer not found" });
+    }
+
+    // 15m GPS collision check if coordinates are modified
+    if (body.latitude !== undefined && body.longitude !== undefined) {
+      const newLat = Number(body.latitude);
+      const newLng = Number(body.longitude);
+      const collisionCheck = store.checkGpsCollision(newLat, newLng, retailer.id, 15.0);
+
+      if (collisionCheck.collision && collisionCheck.collidingStore) {
+        return reply.status(409).send({
+          statusCode: 409,
+          error: "GPS_COLLISION_15M",
+          collisionType: "GPS_COLLISION_15M",
+          message: `Store collision detected: '${collisionCheck.collidingStore.shopName}' is already registered at this location (${collisionCheck.collidingStore.distanceMeters}m away). No two stores can register within 15 meters.`,
+          collidingStore: collisionCheck.collidingStore
+        });
+      }
+      retailer.latitude = newLat;
+      retailer.longitude = newLng;
+    }
+
+    if (body.storeName || body.shopName) retailer.shopName = body.storeName || body.shopName;
+    if (body.ownerName) retailer.ownerName = body.ownerName;
+    if (body.phone) retailer.phone = body.phone;
+    if (body.whatsappNumber) retailer.whatsappNumber = body.whatsappNumber;
+    if (body.address) retailer.address = body.address;
+    if (body.city) retailer.city = body.city;
+    if (body.pincode) retailer.pincode = body.pincode;
+    if (body.creditLimit !== undefined) retailer.creditLimit = Number(body.creditLimit);
+    if (body.creditDues !== undefined) retailer.creditDues = Number(body.creditDues);
+    if (body.paymentTerms || body.paymentTerm) retailer.paymentTerm = body.paymentTerms || body.paymentTerm;
+    if (body.documentType) retailer.documentType = body.documentType;
+    if (body.kycDocUrl || body.documentUrl) retailer.kycDocUrl = body.kycDocUrl || body.documentUrl;
+    if (body.shopPhotoUrl) retailer.shopPhotoUrl = body.shopPhotoUrl;
+    if (body.gstin !== undefined) retailer.gstin = body.gstin;
+    if (body.panOrUdyam !== undefined) retailer.panOrUdyam = body.panOrUdyam;
+    if (body.leadStage) retailer.leadStage = body.leadStage;
+    if (body.kycStatus) retailer.kycStatus = body.kycStatus;
+    if (body.rejectionReason !== undefined) retailer.rejectionReason = body.rejectionReason;
+
+    // Synchronize linked user record
+    const user = store.users.find((u) => u.id === retailer.userId || u.retailerId === retailer.id);
+    if (user) {
+      if (body.ownerName) user.name = body.ownerName;
+      if (body.phone) user.phone = body.phone;
+    }
+
+    return {
+      success: true,
+      message: "Retailer profile updated successfully",
+      retailer: {
+        ...retailer,
+        storeName: retailer.shopName,
+        availableCredit: Math.max(0, retailer.creditLimit - retailer.creditDues)
+      }
+    };
+  });
+
   server.post("/api/crm/notes", async (req: FastifyRequest, reply: FastifyReply) => {
     const { retailerId, agentId, agentName, type, summary, actionItems } = req.body as any;
 
@@ -2281,6 +2617,15 @@ async function startServer() {
     return { success: true, products: sellerProducts };
   });
 
+  server.get("/api/seller/products/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const product = store.products.find((p) => p.id === id || p.skus?.some((s) => s.id === id || s.skuCode === id));
+    if (!product) {
+      return reply.status(404).send({ success: false, error: "Product not found" });
+    }
+    return { success: true, product };
+  });
+
   server.post("/api/seller/products", async (req: FastifyRequest, reply: FastifyReply) => {
     const body = req.body as any;
     const {
@@ -2347,21 +2692,50 @@ async function startServer() {
     const { id } = req.params as any;
     const body = req.body as any;
 
-    const product = store.products.find((p) => p.id === id);
+    const product = store.products.find((p) => p.id === id || p.skus?.some((s) => s.id === id || s.skuCode === id));
     if (!product) {
-      return reply.status(404).send({ error: "Product not found" });
+      return reply.status(404).send({ success: false, error: "Product not found" });
     }
 
-    if (body.name) product.name = body.name;
-    if (body.category) product.category = body.category;
-    if (body.brand) product.brand = body.brand;
+    if (body.name !== undefined) product.name = body.name;
+    if (body.category !== undefined) product.category = body.category;
+    if (body.brand !== undefined) product.brand = body.brand;
     if (body.description !== undefined) product.description = body.description;
-    if (body.hsnCode) product.hsnCode = body.hsnCode;
+    if (body.hsnCode !== undefined) product.hsnCode = body.hsnCode;
     if (body.gstRatePct !== undefined) product.gstRatePct = Number(body.gstRatePct);
-    if (body.marginPct !== undefined) product.marginPct = Number(body.marginPct);
-    if (body.imageUrl) product.imageUrl = body.imageUrl;
+    if (body.imageUrl !== undefined) product.imageUrl = body.imageUrl;
+    if (body.status !== undefined) product.status = body.status;
+    if (body.isArchived !== undefined) product.isArchived = Boolean(body.isArchived);
+
     if (body.skus && Array.isArray(body.skus)) {
       product.skus = body.skus;
+    } else if (product.skus && product.skus.length > 0) {
+      // Support flat SKU fields directly on body (updating primary SKU)
+      const primarySku = product.skus[0];
+      if (body.wholesalePrice !== undefined) primarySku.wholesalePrice = Number(body.wholesalePrice);
+      if (body.mrp !== undefined) primarySku.mrp = Number(body.mrp);
+      if (body.stock !== undefined || body.stockQuantity !== undefined) {
+        primarySku.stockQuantity = Number(body.stock ?? body.stockQuantity);
+      }
+      if (body.moq !== undefined || body.minimumOrderQuantity !== undefined) {
+        primarySku.minimumOrderQuantity = Number(body.moq ?? body.minimumOrderQuantity);
+      }
+      if (body.unitTitle !== undefined) primarySku.unitTitle = body.unitTitle;
+      if (body.packMultiplier !== undefined) primarySku.packMultiplier = Number(body.packMultiplier);
+      if (body.cartonMultiplier !== undefined) primarySku.cartonMultiplier = Number(body.cartonMultiplier);
+      if (body.pricingSlabs !== undefined || body.volumeDiscountSlabs !== undefined) {
+        primarySku.pricingSlabs = body.pricingSlabs ?? body.volumeDiscountSlabs;
+      }
+      if (body.isActive !== undefined) primarySku.isActive = Boolean(body.isActive);
+
+      // Recalculate margin percentage
+      if (primarySku.mrp && primarySku.wholesalePrice) {
+        product.marginPct = Math.round(((primarySku.mrp - primarySku.wholesalePrice) / primarySku.mrp) * 100 * 10) / 10;
+      }
+    }
+
+    if (body.marginPct !== undefined) {
+      product.marginPct = Number(body.marginPct);
     }
 
     return { success: true, message: "Product updated successfully", product };
@@ -2369,13 +2743,27 @@ async function startServer() {
 
   server.delete("/api/seller/products/:id", async (req: FastifyRequest, reply: FastifyReply) => {
     const { id } = req.params as any;
-    const productIdx = store.products.findIndex((p) => p.id === id);
+    const query = (req.query || {}) as { archive?: string; hardDelete?: string };
+    const body = (req.body as any) || {};
+
+    const productIdx = store.products.findIndex((p) => p.id === id || p.skus?.some((s) => s.id === id || s.skuCode === id));
     if (productIdx === -1) {
-      return reply.status(404).send({ error: "Product not found" });
+      return reply.status(404).send({ success: false, error: "Product not found" });
     }
 
-    const removed = store.products.splice(productIdx, 1)[0];
-    return { success: true, message: `Product "${removed.name}" archived successfully` };
+    const isHardDelete = query.hardDelete === "true" || body.hardDelete === true;
+    if (!isHardDelete) {
+      const product = store.products[productIdx];
+      product.status = "ARCHIVED";
+      product.isArchived = true;
+      if (product.skus) {
+        product.skus.forEach((s) => (s.isActive = false));
+      }
+      return { success: true, message: `Product "${product.name}" archived successfully`, product };
+    } else {
+      const removed = store.products.splice(productIdx, 1)[0];
+      return { success: true, message: `Product "${removed.name}" permanently deleted` };
+    }
   });
 
   // 14. Decentralized Seller-Retailer Credit Line Management
@@ -3309,8 +3697,76 @@ async function startServer() {
 
   server.get("/api/pos/bills", async (req: FastifyRequest) => {
     const query = req.query as any;
-    const bills = store.retailPosBills.filter((b) => matchRetailer(b.retailerId, query.retailerId));
-    return { success: true, count: bills.length, bills };
+    let bills = store.retailPosBills.filter((b) => matchRetailer(b.retailerId, query.retailerId));
+
+    if (query.date) {
+      bills = bills.filter((b) => b.createdAt.startsWith(query.date));
+    }
+    if (query.customerPhone) {
+      bills = bills.filter((b) => b.customerPhone?.includes(query.customerPhone));
+    }
+    if (query.paymentMode) {
+      bills = bills.filter((b) => b.paymentMode === query.paymentMode);
+    }
+
+    const limit = query.limit ? parseInt(query.limit, 10) : 50;
+    const offset = query.offset ? parseInt(query.offset, 10) : 0;
+    return { success: true, count: bills.length, bills: bills.slice(offset, offset + limit) };
+  });
+
+  server.get("/api/pos/bills/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as { id: string };
+    const bill = store.retailPosBills.find((b) => b.id === id || b.billNumber === id);
+    if (!bill) {
+      return reply.status(404).send({ success: false, error: "Bill not found" });
+    }
+
+    const retailer = store.retailers.find((r) => r.id === bill.retailerId);
+
+    // Generate 58mm/80mm ESC/POS Thermal Receipt Text Format
+    const lineSeparator = "----------------------------------------\n";
+    let receiptText = "";
+    receiptText += `           ${retailer?.shopName || "KIRANA RETAIL STORE"}\n`;
+    receiptText += `      ${retailer?.address || "Hazratganj, Lucknow"}\n`;
+    receiptText += `          GSTIN: ${retailer?.gstin || "NOT APPLICABLE"}\n`;
+    receiptText += lineSeparator;
+    receiptText += `Bill No: ${bill.billNumber}   Date: ${new Date(bill.createdAt).toLocaleDateString("en-IN")}\n`;
+    receiptText += `Customer: ${bill.customerName || "Walk-in"}   Phone: ${bill.customerPhone || "N/A"}\n`;
+    receiptText += lineSeparator;
+    receiptText += "Item                  Qty   Rate    Total\n";
+    receiptText += lineSeparator;
+
+    bill.items.forEach((it) => {
+      const itemName = it.name.slice(0, 20).padEnd(20, " ");
+      const qty = String(it.quantity).padStart(3, " ");
+      const rate = String(it.unitPrice).padStart(6, " ");
+      const tot = String(it.totalPrice).padStart(8, " ");
+      receiptText += `${itemName} ${qty} ${rate} ${tot}\n`;
+    });
+
+    receiptText += lineSeparator;
+    receiptText += `Subtotal:                            ₹${bill.subtotal.toFixed(2)}\n`;
+    if (bill.discountTotal > 0) {
+      receiptText += `Discount:                           -₹${bill.discountTotal.toFixed(2)}\n`;
+    }
+    receiptText += `Tax:                                 ₹${bill.taxTotal.toFixed(2)}\n`;
+    receiptText += `GRAND TOTAL:                        ₹${bill.grandTotal.toFixed(2)}\n`;
+    receiptText += `Payment Mode: ${bill.paymentMode}\n`;
+    receiptText += lineSeparator;
+    receiptText += "         THANK YOU! VISIT AGAIN         \n";
+
+    return {
+      success: true,
+      bill: {
+        ...bill,
+        taxAmount: bill.taxTotal,
+        retailerShopName: retailer?.shopName,
+        retailerPhone: retailer?.phone,
+        reprintedAt: new Date().toISOString(),
+        escPosReceipt: receiptText,
+        escPosThermalReceipt: receiptText
+      }
+    };
   });
 
   server.post("/api/pos/daily-register", async (req: FastifyRequest) => {

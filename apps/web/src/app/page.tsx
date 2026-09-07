@@ -29,7 +29,8 @@ import {
   FileSpreadsheet,
   UserPlus,
   Key,
-  Users
+  Users,
+  Clock
 } from "lucide-react";
 import SavingsCalculator from "../components/roi/SavingsCalculator";
 import KycVerificationModal from "../components/kyc/KycVerificationModal";
@@ -57,6 +58,8 @@ import SuperAdminUserRegistryDesk from "../components/admin/SuperAdminUserRegist
 import AuthGateway from "../components/auth/AuthGateway";
 import AppShell from "../components/layout/AppShell";
 import AccessDeniedView from "../components/common/AccessDeniedView";
+import OrderDetailsDrawer from "../components/orders/OrderDetailsDrawer";
+import EmptyState from "../components/common/EmptyState";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
@@ -74,9 +77,13 @@ export default function Home() {
 
   // Sub-tabs for roles
   const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "PACKING" | "LOGISTICS" | "ERP" | "ROI" | "STAFF">("ORDERS");
-  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "POS_COUNTER" | "SMART_TOOLS" | "STAFF">("CATALOG");
+  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "ORDERS" | "POS_COUNTER" | "SMART_TOOLS" | "STAFF">("CATALOG");
   const [adminTab, setAdminTab] = useState<"ANALYTICS" | "KYC" | "USERS">("ANALYTICS");
   const [agentTab, setAgentTab] = useState<"CRM" | "LEADERBOARD_COACHING">("CRM");
+
+  // Order Details Drawer & Filters
+  const [selectedOrderIdForDrawer, setSelectedOrderIdForDrawer] = useState<string | null>(null);
+  const [retailerOrderFilter, setRetailerOrderFilter] = useState<string>("ALL");
 
   // Restore authenticated session from localStorage on mount
   useEffect(() => {
@@ -236,6 +243,22 @@ export default function Home() {
   useEffect(() => {
     loadData();
   }, [activeRole, selectedBrand, selectedCategory]);
+
+  // 6-second polling for live order fulfillment tracking
+  useEffect(() => {
+    if (activeRole === "RETAILER" && retailerTab === "ORDERS") {
+      const interval = setInterval(() => {
+        const retId = currentAuthUser?.tenantId || currentAuthUser?.retailerProfile?.id || "ret_gupta_kirana";
+        fetch(`${API_BASE}/api/orders?role=RETAILER&retailerId=${retId}`)
+          .then((r) => r.json())
+          .then((ords) => {
+            if (ords.orders) setRetailerOrders(ords.orders);
+          })
+          .catch(() => {});
+      }, 6000);
+      return () => clearInterval(interval);
+    }
+  }, [activeRole, retailerTab, currentAuthUser]);
 
   // Seller dispatch
   const handleDispatch = async (subOrderId: string) => {
@@ -479,6 +502,301 @@ export default function Home() {
                   setRetailerTab("CATALOG");
                 }}
               />
+            )}
+
+            {retailerTab === "ORDERS" && (
+              <div className="space-y-6">
+                {/* 1. Header & Summary Stats */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                      <PackageCheck className="w-6 h-6 text-emerald-600" />
+                      My Wholesale Orders & Fulfillment Radar
+                    </h2>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Live 5-stage milestone tracking from warehouse dispatch to Kirana doorstep delivery.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={loadData}
+                      className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                      Refresh Radar
+                    </button>
+                    <button
+                      onClick={() => setRetailerTab("CATALOG")}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition"
+                    >
+                      <ShoppingBag className="w-3.5 h-3.5" />
+                      Place New Order
+                    </button>
+                  </div>
+                </div>
+
+                {/* 2. Top Stats Bar */}
+                {(() => {
+                  const totalOrders = retailerOrders.length;
+                  let activeDeliveries = 0;
+                  let deliveredOrders = 0;
+                  let totalWholesaleSpend = 0;
+
+                  retailerOrders.forEach((mo) => {
+                    totalWholesaleSpend += mo.totalAmount || 0;
+                    mo.subOrders?.forEach((so: any) => {
+                      if (so.status === "DELIVERED") {
+                        deliveredOrders++;
+                      } else {
+                        activeDeliveries++;
+                      }
+                    });
+                  });
+
+                  return (
+                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total B2B Orders</div>
+                        <div className="text-2xl font-black text-slate-900 mt-1">{totalOrders}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">Dispatched from FMCG Hubs</div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="text-xs font-bold text-amber-600 uppercase tracking-wider flex items-center gap-1">
+                          <Clock className="w-3.5 h-3.5" /> Active Shipments
+                        </div>
+                        <div className="text-2xl font-black text-amber-600 mt-1">{activeDeliveries}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">En route or packing</div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="text-xs font-bold text-emerald-600 uppercase tracking-wider flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" /> Fulfilled & Verified
+                        </div>
+                        <div className="text-2xl font-black text-emerald-600 mt-1">{deliveredOrders}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">Delivered to counter</div>
+                      </div>
+
+                      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                        <div className="text-xs font-bold text-indigo-600 uppercase tracking-wider flex items-center gap-1">
+                          <TrendingUp className="w-3.5 h-3.5" /> Total Wholesale Buy
+                        </div>
+                        <div className="text-2xl font-black text-indigo-900 mt-1">₹{totalWholesaleSpend.toLocaleString("en-IN")}</div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">With Net-7 B2B credit</div>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* 3. Delivery OTP Card (Prominent Banner for Live Orders) */}
+                {(() => {
+                  let activeOtpSubOrder: any = null;
+                  for (const mo of retailerOrders) {
+                    for (const so of mo.subOrders || []) {
+                      if (so.deliveryOtp && so.status !== "DELIVERED") {
+                        activeOtpSubOrder = { ...so, masterOrderNumber: mo.orderNumber, masterOrderId: mo.id };
+                        break;
+                      }
+                    }
+                    if (activeOtpSubOrder) break;
+                  }
+
+                  if (!activeOtpSubOrder) return null;
+
+                  return (
+                    <div className="bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-5 text-white shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                      <div className="flex items-start sm:items-center gap-3.5">
+                        <div className="p-3 bg-white/10 backdrop-blur rounded-xl border border-white/20">
+                          <KeyRound className="w-7 h-7 text-amber-300 animate-pulse" />
+                        </div>
+                        <div>
+                          <div className="text-xs uppercase tracking-wider text-emerald-100 font-bold flex items-center gap-1.5">
+                            <span>Delivery Hand-Off OTP</span>
+                            <span className="bg-amber-400 text-amber-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
+                              Active Delivery
+                            </span>
+                          </div>
+                          <div className="text-base font-extrabold flex items-center gap-2 mt-1">
+                            <span>OTP:</span>
+                            <span className="font-mono text-2xl font-black tracking-widest bg-white text-emerald-950 px-3 py-0.5 rounded-lg shadow-inner">
+                              {activeOtpSubOrder.deliveryOtp}
+                            </span>
+                            <span className="text-xs font-normal text-emerald-100 hidden sm:inline">
+                              (Order #{activeOtpSubOrder.masterOrderNumber} • {activeOtpSubOrder.organizationName})
+                            </span>
+                          </div>
+                          <p className="text-xs text-emerald-100/90 mt-1">
+                            Share ONLY with Delivery Pilot after physical carton count & seal verification at your store.
+                          </p>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => setSelectedOrderIdForDrawer(activeOtpSubOrder.masterOrderId || activeOtpSubOrder.id)}
+                        className="px-4 py-2 bg-white hover:bg-emerald-50 text-emerald-900 font-bold text-xs rounded-xl transition shadow flex items-center gap-1.5 whitespace-nowrap self-stretch md:self-auto justify-center"
+                      >
+                        <Eye className="w-3.5 h-3.5" />
+                        Track Live Transit
+                      </button>
+                    </div>
+                  );
+                })()}
+
+                {/* 4. Filter Chips */}
+                <div className="flex flex-wrap gap-2 text-xs font-bold">
+                  {(["ALL", "PENDING", "ACCEPTED", "PACKED", "DISPATCHED", "DELIVERED"] as const).map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      onClick={() => setRetailerOrderFilter(filter)}
+                      className={`px-3 py-1.5 rounded-xl border transition ${
+                        retailerOrderFilter === filter
+                          ? "bg-slate-900 text-white border-slate-900 shadow-sm"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+
+                {/* 5. Orders List */}
+                {(() => {
+                  const filteredOrders = retailerOrders.filter((mo) => {
+                    if (retailerOrderFilter === "ALL") return true;
+                    return mo.subOrders?.some((so: any) => so.status === retailerOrderFilter);
+                  });
+
+                  if (filteredOrders.length === 0) {
+                    return (
+                      <EmptyState
+                        icon={PackageCheck}
+                        title="No orders found"
+                        description={
+                          retailerOrderFilter === "ALL"
+                            ? "You haven't placed any wholesale orders yet. Discover high-margin FMCG products in the catalog."
+                            : `No orders currently match the '${retailerOrderFilter}' status.`
+                        }
+                        action={
+                          retailerOrderFilter === "ALL"
+                            ? {
+                                label: "Explore Wholesale Catalog",
+                                onClick: () => setRetailerTab("CATALOG")
+                              }
+                            : {
+                                label: "Show All Orders",
+                                onClick: () => setRetailerOrderFilter("ALL")
+                              }
+                        }
+                      />
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      {filteredOrders.map((mo) => (
+                        <div
+                          key={mo.id}
+                          className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 space-y-4 hover:border-slate-300 transition"
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="font-mono font-bold text-slate-900 text-base">
+                                  #{mo.orderNumber}
+                                </span>
+                                <span className="text-xs text-slate-500">
+                                  Placed on {new Date(mo.createdAt).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
+                                </span>
+                              </div>
+                              <div className="text-xs text-slate-500 mt-0.5">
+                                Multi-vendor dispatch split across {mo.subOrders?.length || 0} wholesale distributors
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3">
+                              <div className="text-right">
+                                <div className="text-xs text-slate-500 font-medium">Order Total</div>
+                                <div className="font-black text-slate-900 text-lg">₹{mo.totalAmount?.toLocaleString("en-IN")}</div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedOrderIdForDrawer(mo.id)}
+                                className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                                Details & Timeline
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Sub-Orders Breakdown */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {mo.subOrders?.map((so: any) => (
+                              <div
+                                key={so.id}
+                                className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2.5"
+                              >
+                                <div className="flex items-start justify-between">
+                                  <div>
+                                    <div className="font-bold text-slate-900 text-sm">{so.organizationName}</div>
+                                    <div className="text-slate-500 text-[11px] font-mono">Sub-Order: {so.id}</div>
+                                  </div>
+                                  <span
+                                    className={`px-2.5 py-0.5 rounded-full font-black text-[10px] uppercase tracking-wider ${
+                                      so.status === "DELIVERED"
+                                        ? "bg-emerald-100 text-emerald-800"
+                                        : so.status === "DISPATCHED"
+                                        ? "bg-blue-100 text-blue-800"
+                                        : "bg-amber-100 text-amber-800"
+                                    }`}
+                                  >
+                                    {so.status}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center justify-between text-slate-600 pt-1 border-t border-slate-200/60">
+                                  <span>Fulfillment Value:</span>
+                                  <span className="font-black text-slate-900">₹{so.totalAmount?.toLocaleString("en-IN")}</span>
+                                </div>
+
+                                {so.deliveryOtp && (
+                                  <div className="flex items-center justify-between bg-white p-2 rounded-lg border border-slate-200">
+                                    <span className="text-slate-500 font-medium text-[11px]">Doorstep OTP:</span>
+                                    <span className="font-mono font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                      {so.deliveryOtp}
+                                    </span>
+                                  </div>
+                                )}
+
+                                <div className="flex items-center gap-2 pt-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleViewInvoice(so.id)}
+                                    className="flex-1 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition"
+                                  >
+                                    <Receipt className="w-3.5 h-3.5 text-indigo-600" />
+                                    GST Tax Invoice
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedOrderIdForDrawer(so.id)}
+                                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg flex items-center justify-center gap-1 transition border border-indigo-200"
+                                  >
+                                    <Truck className="w-3.5 h-3.5" />
+                                    Track
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
             )}
 
             {retailerTab === "CATALOG" && (
@@ -956,6 +1274,15 @@ export default function Home() {
                             <Receipt className="w-3.5 h-3.5" />
                             GST Invoice
                           </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOrderIdForDrawer(order.masterOrderId || order.id)}
+                            className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg transition flex items-center gap-1 border border-indigo-200 shadow-sm"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Details & SLA
+                          </button>
                         </div>
                       </div>
                     ))
@@ -1094,6 +1421,18 @@ export default function Home() {
         apiBase={API_BASE}
         onSwitchAccount={handleSwitchAccount}
       />
+
+      {/* Universal Slide-Over Order Details Drawer */}
+      {selectedOrderIdForDrawer && (
+        <OrderDetailsDrawer
+          orderId={selectedOrderIdForDrawer}
+          isOpen={!!selectedOrderIdForDrawer}
+          onClose={() => setSelectedOrderIdForDrawer(null)}
+          apiBase={API_BASE}
+          userRole={activeRole === "SELLER" ? "SELLER" : activeRole === "RETAILER" ? "RETAILER" : "ADMIN"}
+          onOrderUpdated={loadData}
+        />
+      )}
     </div>
   );
 }

@@ -26,8 +26,10 @@ import {
   Truck,
   FileCheck,
   Store,
-  KeyRound
+  KeyRound,
+  Eye
 } from "lucide-react";
+import OrderDetailsDrawer from "../orders/OrderDetailsDrawer";
 
 interface SuperAdminAnalyticsDashboardProps {
   apiBase: string;
@@ -35,6 +37,7 @@ interface SuperAdminAnalyticsDashboardProps {
 
 export default function SuperAdminAnalyticsDashboard({ apiBase }: SuperAdminAnalyticsDashboardProps) {
   const [overview, setOverview] = useState<any | null>(null);
+  const [selectedOrderIdForDrawer, setSelectedOrderIdForDrawer] = useState<string | null>(null);
   const [heatmaps, setHeatmaps] = useState<any[]>([]);
   const [brandShares, setBrandShares] = useState<any[]>([]);
   const [cohorts, setCohorts] = useState<any[]>([]);
@@ -831,9 +834,19 @@ export default function SuperAdminAnalyticsDashboard({ apiBase }: SuperAdminAnal
                         )}
                       </td>
                       <td className="p-3.5">
-                        <span className="text-[11px] text-indigo-600 font-bold uppercase tracking-wider">
-                          {disp.status}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[11px] text-indigo-600 font-bold uppercase tracking-wider">
+                            {disp.status}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedOrderIdForDrawer(disp.orderId || disp.subOrderId)}
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-xs rounded-lg flex items-center gap-1 transition border border-indigo-200 shadow-sm"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            Track SLA
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -842,6 +855,18 @@ export default function SuperAdminAnalyticsDashboard({ apiBase }: SuperAdminAnal
             </table>
           </div>
         </div>
+      )}
+
+      {/* Universal Order Details Drawer */}
+      {selectedOrderIdForDrawer && (
+        <OrderDetailsDrawer
+          orderId={selectedOrderIdForDrawer}
+          isOpen={!!selectedOrderIdForDrawer}
+          onClose={() => setSelectedOrderIdForDrawer(null)}
+          apiBase={apiBase}
+          userRole="ADMIN"
+          onOrderUpdated={loadAnalytics}
+        />
       )}
     </div>
   );

@@ -1069,6 +1069,218 @@ async function run() {
     `Impersonated usr_ret_1 successfully; recorded in immutable audit trail (${auditLogsRes.data?.auditLogs?.length} events)`
   );
 
+  // =========================================================================
+  // UNIVERSAL VIEW & EDIT CRUD, RETAILER ORDER TRACKING & REPRINT EXPANSION
+  // =========================================================================
+
+  // 81. Universal CRUD: Single Seller Product Retrieval by ID (GET /api/seller/products/:id)
+  const getProductRes = await request("GET", `${API_BASE}/api/seller/products/prod_parleg`);
+  assert(
+    getProductRes.statusCode === 200 &&
+    getProductRes.data?.success === true &&
+    (getProductRes.data?.product?.id === "prod_parleg" || getProductRes.data?.product?.skus?.some(s => s.id === "sku_parle_carton")) &&
+    Array.isArray(getProductRes.data?.product?.skus) &&
+    getProductRes.data?.product?.skus?.length > 0,
+    "81. Universal CRUD: Single Seller Product Retrieval by ID (GET /api/seller/products/:id)",
+    `Product: "${getProductRes.data?.product?.name}" | Primary SKU: ${getProductRes.data?.product?.skus?.[0]?.skuCode} | Wholesale: ₹${getProductRes.data?.product?.skus?.[0]?.wholesalePrice}`
+  );
+
+  // 82. Universal CRUD: Update Seller Product Wholesale Rate, Stock, MOQ, Volume Slabs & Margin Recalculation (PUT /api/seller/products/:id)
+  const putProductRes = await request("PUT", `${API_BASE}/api/seller/products/prod_parleg`, {
+    wholesalePrice: 575,
+    mrp: 720,
+    stock: 250,
+    moq: 2,
+    pricingSlabs: [
+      { minQuantity: 2, maxQuantity: 9, discountPct: 0, effectiveWholesalePrice: 575 },
+      { minQuantity: 10, maxQuantity: 49, discountPct: 3.5, effectiveWholesalePrice: 554.88 },
+      { minQuantity: 50, maxQuantity: 999, discountPct: 6, effectiveWholesalePrice: 540.5 }
+    ],
+    description: "Premium Parle-G Glucose Biscuit Wholesale Carton"
+  });
+  const updatedPrimarySku = putProductRes.data?.product?.skus?.[0];
+  assert(
+    putProductRes.statusCode === 200 &&
+    putProductRes.data?.success === true &&
+    updatedPrimarySku?.wholesalePrice === 575 &&
+    updatedPrimarySku?.stockQuantity === 250 &&
+    updatedPrimarySku?.minimumOrderQuantity === 2 &&
+    updatedPrimarySku?.pricingSlabs?.length === 3 &&
+    putProductRes.data?.product?.marginPct === 20.1,
+    "82. Universal CRUD: Update Seller Product Rate, Stock, MOQ, Volume Slabs & Recalculate Margin (PUT /api/seller/products/:id)",
+    `Wholesale: ₹${updatedPrimarySku?.wholesalePrice} | Stock: ${updatedPrimarySku?.stockQuantity} | MOQ: ${updatedPrimarySku?.minimumOrderQuantity} | Slabs: ${updatedPrimarySku?.pricingSlabs?.length} | Recalculated Margin: ${putProductRes.data?.product?.marginPct}%`
+  );
+
+  // 83. Universal Order Details: Master and Sub-Order Retrieval with Line Items, Store Profile & Delivery OTP (GET /api/orders/:id)
+  const masterOrderDetailsRes = await request("GET", `${API_BASE}/api/orders/ord_sample_01`);
+  const subOrderDetailsRes = await request("GET", `${API_BASE}/api/orders/subord_sample_fmcg`);
+  assert(
+    masterOrderDetailsRes.statusCode === 200 &&
+    masterOrderDetailsRes.data?.order?.orderNumber === "ORD-871718" &&
+    masterOrderDetailsRes.data?.order?.retailer?.shopName &&
+    masterOrderDetailsRes.data?.order?.subOrders?.length > 0 &&
+    subOrderDetailsRes.statusCode === 200 &&
+    subOrderDetailsRes.data?.order?.items?.length > 0 &&
+    subOrderDetailsRes.data?.order?.deliveryOtp,
+    "83. Universal Order Details: Dual Master & Sub-Order Retrieval with Line Items & Delivery OTP (GET /api/orders/:id)",
+    `Master: #${masterOrderDetailsRes.data?.order?.orderNumber} (${masterOrderDetailsRes.data?.order?.retailer?.shopName}) | SubOrder: ${subOrderDetailsRes.data?.order?.id} | OTP: ${subOrderDetailsRes.data?.order?.deliveryOtp} | Items: ${subOrderDetailsRes.data?.order?.items?.length}`
+  );
+
+  // 84. Universal Order Management: Order Status Transitions, Delivery Notes & Transit Duration (PATCH /api/orders/:id)
+  const patchPackedRes = await request("PATCH", `${API_BASE}/api/orders/subord_sample_bev`, {
+    status: "PACKED",
+    deliveryNotes: "Packed in reinforced crate with tamper-evident seal"
+  });
+  const patchDispatchedRes = await request("PATCH", `${API_BASE}/api/orders/subord_sample_bev`, {
+    status: "DISPATCHED"
+  });
+  const patchDeliveredRes = await request("PATCH", `${API_BASE}/api/orders/subord_sample_bev`, {
+    status: "DELIVERED",
+    paymentStatus: "PAID"
+  });
+  assert(
+    patchPackedRes.statusCode === 200 &&
+    patchPackedRes.data?.order?.status === "PACKED" &&
+    patchPackedRes.data?.order?.deliveryNotes?.includes("tamper-evident seal") &&
+    patchDispatchedRes.statusCode === 200 &&
+    patchDispatchedRes.data?.order?.status === "DISPATCHED" &&
+    patchDeliveredRes.statusCode === 200 &&
+    patchDeliveredRes.data?.order?.status === "DELIVERED" &&
+    patchDeliveredRes.data?.order?.transitDurationMinutes >= 1,
+    "84. Universal Order Management: Status Transitions, Delivery Notes & Transit Duration (PATCH /api/orders/:id)",
+    `Status Lifecycle: PACKED -> DISPATCHED -> DELIVERED | Notes: "${patchPackedRes.data?.order?.deliveryNotes}" | Transit Duration: ${patchDeliveredRes.data?.order?.transitDurationMinutes} min`
+  );
+
+  // 85. Retailer Store 360: Profile, Geolocation Coordinates, KYC Documents & Lifetime Orders (GET /api/retailers/:id)
+  const getRetailerRes = await request("GET", `${API_BASE}/api/retailers/ret_gupta_kirana`);
+  assert(
+    getRetailerRes.statusCode === 200 &&
+    getRetailerRes.data?.success === true &&
+    getRetailerRes.data?.retailer?.id === "ret_gupta_kirana" &&
+    getRetailerRes.data?.retailer?.storeName &&
+    getRetailerRes.data?.retailer?.ordersCount >= 1 &&
+    Array.isArray(getRetailerRes.data?.retailer?.orderHistory) &&
+    Array.isArray(getRetailerRes.data?.retailer?.documents),
+    "85. Retailer Store 360: Profile, Geolocation, KYC Documents & Lifetime Orders (GET /api/retailers/:id)",
+    `Store: ${getRetailerRes.data?.retailer?.storeName} | Owner: ${getRetailerRes.data?.retailer?.ownerName} | Lifetime Orders: ${getRetailerRes.data?.retailer?.ordersCount} | Documents: ${getRetailerRes.data?.retailer?.documents?.length}`
+  );
+
+  // 86. Retailer Store Management: Profile Updates & 15m GPS Collision Hard Rejection (PUT /api/retailers/:id)
+  const updateRetailerRes = await request("PUT", `${API_BASE}/api/retailers/ret_gupta_kirana`, {
+    ownerName: "Ramesh Kumar Gupta",
+    creditLimit: 80000,
+    paymentTerms: "NET_15",
+    address: "Shop 4-5, Near Mayfair Cinema, Hazratganj, Lucknow"
+  });
+  // ret_sharma_general is at lat: 26.852000, lng: 80.949000. Testing 26.852002, 80.949002 (within 15m collision)
+  const collisionRetailerRes = await request("PUT", `${API_BASE}/api/retailers/ret_gupta_kirana`, {
+    latitude: 26.852002,
+    longitude: 80.949002
+  });
+  assert(
+    updateRetailerRes.statusCode === 200 &&
+    updateRetailerRes.data?.retailer?.creditLimit === 80000 &&
+    updateRetailerRes.data?.retailer?.paymentTerm === "NET_15" &&
+    collisionRetailerRes.statusCode === 409 &&
+    (collisionRetailerRes.data?.error === "GPS_COLLISION_15M" || collisionRetailerRes.data?.collisionType === "GPS_COLLISION_15M"),
+    "86. Retailer Store Management: Profile Updates & 15m GPS Collision Rejection (PUT /api/retailers/:id)",
+    `Profile Updated (Credit Limit: ₹${updateRetailerRes.data?.retailer?.creditLimit}, Terms: ${updateRetailerRes.data?.retailer?.paymentTerm}) | Collision HTTP 409: ${collisionRetailerRes.data?.error || collisionRetailerRes.data?.collisionType}`
+  );
+
+  // 87. Universal User Registry: Single User Profile & Granular Permissions (GET /api/users/:id)
+  const getUserRes = await request("GET", `${API_BASE}/api/users/usr_seller_picker_1`);
+  assert(
+    getUserRes.statusCode === 200 &&
+    getUserRes.data?.success === true &&
+    getUserRes.data?.user?.id === "usr_seller_picker_1" &&
+    getUserRes.data?.user?.role === "SELLER_STAFF" &&
+    Array.isArray(getUserRes.data?.user?.permissions) &&
+    getUserRes.data?.user?.permissions?.length > 0,
+    "87. Universal User Registry: Single User Profile & Granular Permissions (GET /api/users/:id)",
+    `User: ${getUserRes.data?.user?.name} | Role: ${getUserRes.data?.user?.role} | Staff Title: "${getUserRes.data?.user?.staffTitle}" | Permissions: ${getUserRes.data?.user?.permissions?.length}`
+  );
+
+  // 88. Universal User Management: Update User Role, Status & Security Audit Trail Logging (PUT /api/users/:id)
+  const putUserRes = await request("PUT", `${API_BASE}/api/users/usr_seller_picker_1`, {
+    staffTitle: "Lead Operations & Dispatch Head",
+    status: "ACTIVE",
+    permissions: ["CAN_VIEW_ORDERS", "CAN_PACK_BATCHES", "CAN_DISPATCH", "CAN_PRINT_LABELS", "CAN_VIEW_LEDGERS", "CAN_VIEW_PROFIT_MARGINS"]
+  });
+  const getUserAfterAuditRes = await request("GET", `${API_BASE}/api/users/usr_seller_picker_1`);
+  const hasAuditEntry = getUserAfterAuditRes.data?.user?.auditLog?.some(l => l.action === "USER_UPDATED");
+  assert(
+    putUserRes.statusCode === 200 &&
+    putUserRes.data?.success === true &&
+    putUserRes.data?.user?.staffTitle === "Lead Operations & Dispatch Head" &&
+    putUserRes.data?.user?.permissions?.length === 6 &&
+    hasAuditEntry,
+    "88. Universal User Management: Update Role/Status & Audit Trail Logging (PUT /api/users/:id)",
+    `Title: "${putUserRes.data?.user?.staffTitle}" | Permissions: ${putUserRes.data?.user?.permissions?.length} | Audit Entry Logged: ${hasAuditEntry}`
+  );
+
+  // 89. Retail POS Bills: Single Counter Bill Retrieval & 58mm/80mm ESC/POS Thermal Receipt Reprint (GET /api/pos/bills/:id)
+  const getBillRes = await request("GET", `${API_BASE}/api/pos/bills/bill_001`);
+  const receiptStr = getBillRes.data?.bill?.escPosThermalReceipt || getBillRes.data?.bill?.escPosReceipt || "";
+  assert(
+    getBillRes.statusCode === 200 &&
+    getBillRes.data?.success === true &&
+    (getBillRes.data?.bill?.id === "bill_001" || getBillRes.data?.bill?.billNumber === "BILL-2026-101") &&
+    getBillRes.data?.bill?.items?.length >= 2 &&
+    getBillRes.data?.bill?.grandTotal > 0 &&
+    receiptStr.includes("BILL-2026-101") &&
+    receiptStr.includes("GRAND TOTAL:") &&
+    receiptStr.includes("THANK YOU! VISIT AGAIN"),
+    "89. Retail POS Bills: Single Bill Retrieval & 58mm/80mm ESC/POS Thermal Receipt Reprint (GET /api/pos/bills/:id)",
+    `Bill #${getBillRes.data?.bill?.billNumber} | Grand Total: ₹${getBillRes.data?.bill?.grandTotal} | Items: ${getBillRes.data?.bill?.items?.length} | Thermal Receipt: Validated (${receiptStr.length} chars)`
+  );
+
+  // 90. Retailer Experience: Live Order Fulfillment Tracking & Delivery OTP Verification Lifecycle
+  const retailerOrdersRes = await request("GET", `${API_BASE}/api/orders?role=RETAILER&retailerId=ret_gupta_kirana`);
+  const myOrders = retailerOrdersRes.data?.orders || [];
+  const hasOrders = retailerOrdersRes.statusCode === 200 && Array.isArray(myOrders) && myOrders.length > 0;
+
+  // Place a dedicated fresh order to test live tracking and OTP delivery verification
+  const liveTrackingOrderRes = await request("POST", `${API_BASE}/api/orders/checkout`, {
+    retailerId: "ret_gupta_kirana",
+    placedByAgentId: "usr_agent_1",
+    paymentTerm: "NET_7",
+    items: [
+      { productSkuId: "sku_parle_carton", quantity: 3 }
+    ]
+  });
+  const liveOrder = liveTrackingOrderRes.data?.order;
+  const liveSubOrder = liveOrder?.subOrders?.[0];
+
+  // Dispatch live order
+  const liveDispatchRes = await request("POST", `${API_BASE}/api/delivery/dispatch`, {
+    subOrderId: liveSubOrder?.id
+  });
+  const liveOtp = liveDispatchRes.data?.subOrder?.deliveryOtp;
+
+  // Retailer queries active orders (simulating 6-second polling)
+  const polledOrdersRes = await request("GET", `${API_BASE}/api/orders?role=RETAILER&retailerId=ret_gupta_kirana`);
+  const polledOrder = polledOrdersRes.data?.orders?.find(o => o.id === liveOrder?.id);
+  const polledSubOrder = polledOrder?.subOrders?.find(s => s.id === liveSubOrder?.id);
+
+  // Delivery driver inputs the 4-digit OTP provided by retailer
+  const verifyLiveOtpRes = await request("POST", `${API_BASE}/api/delivery/verify-otp`, {
+    subOrderId: liveSubOrder?.id,
+    enteredOtp: liveOtp
+  });
+
+  assert(
+    hasOrders &&
+    liveDispatchRes.statusCode === 200 &&
+    liveOtp && liveOtp.length === 4 &&
+    polledSubOrder?.status === "DISPATCHED" &&
+    polledSubOrder?.deliveryOtp === liveOtp &&
+    verifyLiveOtpRes.statusCode === 200 &&
+    verifyLiveOtpRes.data?.subOrder?.status === "DELIVERED" &&
+    verifyLiveOtpRes.data?.subOrder?.transitDurationMinutes >= 1,
+    "90. Retailer Experience: Live Order Fulfillment Tracking & Delivery OTP Verification Lifecycle",
+    `Order #${liveOrder?.orderNumber} | Polled Status: ${polledSubOrder?.status} | Delivery OTP: ${liveOtp} -> Verified DELIVERED (Transit: ${verifyLiveOtpRes.data?.subOrder?.transitDurationMinutes} min)`
+  );
+
   console.log("\n===============================================================");
   console.log(`VERIFICATION SUMMARY: ${passed} PASSED, ${failed} FAILED`);
   console.log("===============================================================");

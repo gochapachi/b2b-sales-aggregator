@@ -77,6 +77,7 @@ export default function AppShell({
       case "RETAILER":
         return [
           { id: "CATALOG", label: "Wholesale Catalog", icon: ShoppingBag },
+          { id: "ORDERS", label: "My Orders & Tracking", icon: PackageCheck },
           { id: "POS_COUNTER", label: "Kirana Counter POS", icon: Zap, badge: "Quick-PIN" },
           { id: "SMART_TOOLS", label: "Profit & Udhar Khata", icon: Percent },
           { id: "STAFF", label: "Store Staff & Cashiers", icon: Users }

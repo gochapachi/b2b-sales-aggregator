@@ -1,125 +1,110 @@
-# Project: Hyperlocal B2B Sales Aggregator (100-Feature Enterprise Expansion)
+# Project: Hyperlocal B2B Sales Aggregator (Universal CRUD, Order Tracking & Mobile Parity)
 
 ## Architecture
 Multi-tier monorepo architecture connecting Kirana Retailers, FMCG Distributors/Wholesalers, Field Sales Agents, Supply BD Agents, and Super Admin:
 - **`packages/shared`**: Domain types, Haversine spatial calculations, 15m GPS collision verification, 2-opt spatial route clustering, Buy-Box composite scoring, ERP fuzzy column matching, FEFO batch prioritization, Sell-through velocity intelligence, Seller ROI calculator.
-- **`apps/api`**: Fastify HTTP server (port 4000) with PostgreSQL 16 persistence and InMemory fallback store.
-  - Endpoints for Self-service Kirana & Seller signups (`/api/signup/retailer`, `/api/signup/seller`), MinIO document upload (`/api/kyc/upload`), Super Admin KYC Review Desk (`/api/kyc/pending`, `/api/kyc/review`).
-  - Field Agent Assisted Onboarding (`/api/onboarding`) with automated Login ID & secure password generation, 15m GPS collision rejection (409 Conflict), and Evolution API WhatsApp dispatch.
-  - In-App version polling (`/api/app/version`).
-  - Multi-Seller Master SKU Marketplace with automated Buy-Box algorithm, stock reservation locks during checkout, and secondary seller SLA fallback routing.
-  - Universal ERP Importer engine with fuzzy column matching, persistent mapping memory, schema dry-run validation, Tally Prime XML & Marg ERP CSV parsers, and FEFO batch allocation.
-  - Automated Beat Builder (`/api/beats/auto-build`) using 2-opt spatial routing for 15–25 stores, territory exclusivity & transfer workflows, and PostGIS <100m geofence validation.
-  - Super Admin Operations HQ metrics: Dispatch TAT countdown, seller SLA scorecards, beat telemetry.
-- **`apps/web`**: Next.js 14 App Router portal (port 3000) with 5 dashboard views (Kirana Retailer, Wholesaler/Brand, Field Sales Agent, Supply BD Agent, Super Admin Operations HQ).
-  - Public signup pages (`/signup/retailer`, `/signup/seller`) with interactive OpenStreetMap GPS pin picker.
-  - Super Admin KYC review desk with document inspector, approve/reject controls, and credential generation preview.
-  - Next.js PWA `sw.js` lifecycle listener + client version polling toast (`GET /api/app/version`).
-  - Supply BD Agent portal for distributor recruitment and onboarding.
-  - Multi-Seller Master SKU cards with Buy-Box winner and alternative seller comparisons.
-  - Universal ERP Bulk Product Importer & visual interactive column mapper (`UniversalErpImporter.tsx`).
-  - Retailer Margin Transparency: gross margin badges on MRP, "Sort by Highest Margin" filter, Cart Profitability summary bar, and sell-through velocity slow-moving alerts.
+- **`apps/api`**: Fastify HTTP server (port 4000) with PostgreSQL 16 persistence and InMemory fallback store (`store/data-store.ts`).
+  - Universal CRUD for Seller Products: `GET /api/seller/products/:id`, `PUT /api/seller/products/:id` (flat SKU pricing/stock/slabs/margin), `DELETE /api/seller/products/:id` (soft archive vs delete).
+  - Universal Order Management: `GET /api/orders/:id` (dual resolution: master `ord_...` and sub-order `subord_...`), `PATCH /api/orders/:id` (status transitions, OTP verification, delivery notes, transit duration).
+  - Store Profile & Lead Management: `GET /api/retailers/:id`, `PUT /api/retailers/:id` (15m collision validation, full order history, contact & credit terms).
+  - Universal User Registry: `GET /api/users/:id`, `PUT /api/users/:id` (granular permissions, role, status toggle, audit trail).
+  - Retail POS Counter: `GET /api/pos/bills`, `GET /api/pos/bills/:id` (bill history, line items, 58mm/80mm ESC/POS thermal reprint payload).
+- **`apps/web`**: Next.js 14 App Router portal (port 3000) with 5 dashboard views:
+  - Common Slide-over Drawer (`components/common/SlideOverDrawer.tsx`) with backdrop blur and smooth transitions.
+  - Seller Catalog Studio (`SellerProductStudio.tsx`): "View Details" Drawer (SKU specs, volume slabs, margin), "Edit Product" Modal (`PUT /api/seller/products/:id`), "Delete / Archive Product" confirmation dialog.
+  - Universal Order Details Drawer (`components/orders/OrderDetailsDrawer.tsx`): line items table, buyer KYC profile with OSM GPS, 5-stage fulfillment timeline, 1-click GST Invoice (`INV-2026-X`) and E-Way Bill downloads. Integrated into Seller and Super Admin desks.
+  - Agent CRM Store Lead Desk (`AgentCrmDashboard.tsx`): "View Store" Drawer (store photos, OSM coordinates, GSTIN/PAN docs, order history, visit logs), "Edit Store" Modal (`PUT /api/retailers/:id`).
+  - Team & User Management (`TenantUserManagementDesk.tsx` & `SuperAdminUserRegistryDesk.tsx`): "View User Profile" Drawer, "Edit User" Modal (`PUT /api/users/:id`).
+  - Retail POS Counter (`RetailPosCheckoutDesk.tsx`): "Bill History" Drawer with line item breakdown and 1-click ESC/POS reprint.
+  - Kirana Retailer Workspace: Dedicated "My Orders & Tracking" Tab (`ORDERS`), status badges (`PENDING`, `ACCEPTED`, `PACKED`, `DISPATCHED`, `DELIVERED`), prominent Delivery OTP Card for dispatched orders, View Order Details modal with itemized pricing, gross profit calculations, 1-click GST Tax Invoice download (`INV-2026-X`), and real-time status polling.
+  - Enterprise UI/UX polish: rich empty states, consistent typography, badge colors, inline validation, and loading spinners.
 - **`apps/mobile`**: React Native / Expo 51 standalone mobile application:
-  - Field Sales Agent screen with assisted store onboarding form, automated password provisioning, and 15m collision validation.
-  - In-app OTA version checker (`OtaUpdateBanner.tsx`) checking `/api/app/version` and linking to APK download.
-- **`docker/`**: PostgreSQL 16 relational DDL schemas (`docker/init.sql`) with tables for users, retailers, organizations, master_skus, seller_sku_listings, stock_reservations, territory_transfers, and 15m GPS collision trigger.
-- **`release/`**: Standalone Android `.apk` binary (hosted at `apps/web/public/downloads/b2b-sales-aggregator.apk`).
-- **`scripts/`**: Comprehensive cloud verification test suite (`scripts/verify-cloud.js`).
+  - Product Detail Modal (`ProductDetailModal.tsx`): specs, carton multipliers, tiered volume slabs, interactive retail resale margin calculator.
+  - Dedicated My Orders Screen (`RetailerOrdersScreen.tsx`): 5-stage status timeline, prominent Delivery OTP card for active deliveries, line-item inspection.
+  - Store Profile Screen (`RetailerProfileScreen.tsx`): View and edit Kirana store profile.
+  - Sub-navigation via `retailerSubTab: "CATALOG" | "ORDERS" | "PROFILE"` in `App.tsx`.
+- **`docker/`**: PostgreSQL 16 relational DDL schemas (`docker/init.sql`).
+- **`release/`**: Standalone Android `.apk` binary (hosted at `apps/web/public/downloads/b2b-sales-aggregator.apk` and `release/b2b-sales-aggregator.apk`).
+- **`scripts/`**: Comprehensive cloud verification test suite (`scripts/verify-cloud.js`, expanded to 90 assertions) and persona authentication tester (`scripts/test-personas.js`).
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
 |---|---|---|---|---|
-| 1 | Public Kirana Retailer Signup | `/signup/retailer` form with store details, GPS picker, KYC doc upload | M3 | R1 |
-| 2 | Public Wholesaler Seller Signup | `/signup/seller` form with business details, GSTIN/PAN, MinIO doc upload | M3 | R1 |
-| 3 | MinIO S3 Document Storage | Secure file upload and pre-signed document preview for KYC verification | M1 | R1 |
-| 4 | PENDING_APPROVAL Account Queue | Restrict unverified accounts to pending approval state across DB and API | M1 | R1 |
-| 5 | Super Admin KYC Review Desk | Interactive inspection desk to approve/reject KYC with reasons | M3 | R1 |
-| 6 | Automated Credential Provisioning | Generate Login ID & cryptographically secure random password upon approval | M1 | R1 |
-| 7 | Evolution API WhatsApp KYC Dispatch | Instant WhatsApp alert to applicant containing credentials and login portal URL | M1 | R1 |
-| 8 | Field Agent Assisted Onboarding | Mobile & CRM assisted store onboarding with automated ID/password generation | M1 | R2 |
-| 9 | WhatsApp Assisted Welcome Alert | Automated welcome notification via WhatsApp to owner with 1-click login link | M1 | R2 |
-| 10 | 15m GPS Uniqueness & Collision Rejection | Database and API rejection of store creation within 15m radius (409 Conflict) | M1 | R2 |
-| 11 | Backend App Version Polling Endpoint | `GET /api/app/version` returning buildHash, timestamp, and APK download URL | M1 | R3 |
-| 12 | Web PWA Service Worker & Refresh Toast | `sw.js` lifecycle listener + client version polling toast for instant reload | M3 | R3 |
-| 13 | Mobile In-App OTA Version Checker | In-app version checker prompting direct download of updated APK | M4 | R3 |
-| 14 | Supply BD Agent Portal | Dedicated portal to recruit, onboard, and manage FMCG distributors | M3 | R4 |
-| 15 | Multi-Seller Master SKU Architecture | Decoupled Master SKU catalog with multiple competing seller listings | M1 | R4 |
-| 16 | Automated Buy-Box Algorithm | Scoring engine combining landed cost, proximity, reliability, and SLA | M2 | R4 |
-| 17 | Distributor Stock Reservation Locks | Atomic 15-minute checkout stock reservation locks to prevent overselling | M1 | R4 |
-| 18 | Secondary Seller SLA Fallback Routing | Automatic fallback rerouting if primary distributor fails to accept within SLA | M1 | R4 |
-| 19 | Universal ERP Interactive Column Mapper | Visual column mapping UI for arbitrary distributor CSV/ERP exports | M3 | R5 |
-| 20 | Fuzzy Column Name Matching | 3-tier fuzzy matcher (aliases, substring, Levenshtein) for ERP headers | M2 | R5 |
-| 21 | Persistent Column Mapping Memory | Store seller-specific column mappings in DB to auto-apply on future uploads | M1 | R5 |
-| 22 | ERP Dry-Run Schema Validation | Non-destructive validation flagging invalid MRP, negative stock, invalid HSN | M2 | R5 |
-| 23 | Tally Prime XML Master Ingestion | Direct parser for Tally Prime XML item masters and inventory batches | M2 | R5 |
-| 24 | Marg ERP CSV Ingestion | Direct parser for Marg ERP CSV exports with batch and expiry date parsing | M2 | R5 |
-| 25 | FEFO Batch/Expiry Inventory Tracking | First-Expiry-First-Out batch prioritization and near-expiry discount flags | M2 | R5 |
-| 26 | Automated Beat Builder & Clustering | Automatically assemble 15–25 onboarded Kiranas into day-wise beat routes | M2 | R6 |
-| 27 | 2-Opt Spatial TSP Route Optimization | Heuristic edge-swapping minimizing total travel distance for field agents | M2 | R6 |
-| 28 | Non-Overlapping Store Exclusivity | Prevent duplicate store claims across agents with collision detection | M1 | R6 |
-| 29 | Territory Transfer Workflow | Reassign Kirana stores between sales agents with audit trail logging | M1 | R6 |
-| 30 | PostGIS <100m Geofence Verification | Strict geofence enforcement rejecting check-ins outside 100m radius | M1 | R6 |
-| 31 | Planned vs. Actual Visit Tracking | Real-time tracking of agent beat execution and visit compliance | M1 | R6 |
-| 32 | Retailer Gross Margin Badges on MRP | Explicit display of ₹ and % gross profit margin on retail catalog cards | M3 | R7 |
-| 33 | Sort by Highest Margin Catalog Filter | Storefront filter allowing retailers to sort products by profitability | M3 | R7 |
-| 34 | Cart Profitability Summary Bar | Real-time total projected retailer margin calculation in checkout cart | M3 | R7 |
-| 35 | Sell-Through Velocity Formula & Alerts | Calculate POS liquidation velocity and display slow-moving SKU warnings | M2 | R7 |
-| 36 | Super Admin Operations HQ Dashboard | Real-time command center for all field agents, active beats, and strike rates | M3 | R7 |
-| 37 | Live Seller Dispatch TAT Countdown | Real-time countdown timer for order dispatch with delayed alert triggers | M3 | R7 |
-| 38 | Seller SLA Compliance Scorecards | Dynamic scoring of distributor fulfillment reliability, TAT, and fill rates | M1 | R7 |
-| 39 | Field Agent Beat Telemetry | Real-time telemetry tracking agent locations, visits, and order strike rates | M3 | R7 |
-| 40 | Automated Live Cloud Verification Suite | 69 automated test assertions in `verify-cloud.js` passing 100% on Coolify VPS | M5 | Verification |
+| 1 | Seller Product Details API & Drawer | `GET /api/seller/products/:id` and interactive View Details Drawer in SellerProductStudio | M1, M2 | R1 |
+| 2 | Seller Product Edit API & Modal | `PUT /api/seller/products/:id` with flat SKU attributes, margin re-calc, and Edit Modal | M1, M2 | R1 |
+| 3 | Seller Product Archive / Delete API & Modal | `DELETE /api/seller/products/:id` supporting soft archive and confirmation modal | M1, M2 | R1 |
+| 4 | Universal Order Details API & Drawer | `GET /api/orders/:id` (dual resolution) and interactive slide-over OrderDetailsDrawer | M1, M2 | R1 |
+| 5 | Order Status & Fulfillment PATCH API | `PATCH /api/orders/:id` for status transitions, OTP verification, transit duration | M1 | R1 |
+| 6 | Agent CRM Store 360 View Drawer | Expand CRM store modal to full drawer: photos, OSM GPS, GSTIN/PAN docs, order history | M2 | R1 |
+| 7 | Agent CRM Store Edit API & Modal | `GET/PUT /api/retailers/:id` to edit store name, contact, address, credit terms | M1, M2 | R1 |
+| 8 | User Profile View Drawer | Detailed permissions checklist, assigned store/warehouse, audit trail in user desks | M2 | R1 |
+| 9 | User Edit API & Modal | `GET/PUT /api/users/:id` to update title, role, granular permissions, status | M1, M2 | R1 |
+| 10 | POS Bill History API & Drawer | `GET /api/pos/bills/:id` and slide-over Bill History Drawer with line items & ESC/POS reprint | M1, M2 | R1 |
+| 11 | Retailer My Orders Tab & Timeline | Dedicated "My Orders" tab with status badges and 5-stage fulfillment timeline | M2 | R2 |
+| 12 | Retailer Delivery OTP Card | High-visibility pinned Delivery OTP Card for dispatched orders to show drivers | M2 | R2 |
+| 13 | Retailer Order Details & Profit Modal | Itemized pricing, unit wholesale rate, MRP, retailer gross profit, 1-click GST invoice | M2 | R2 |
+| 14 | Retailer Real-Time Status Polling | Automated 6-second polling reflecting live warehouse transitions without reload | M2 | R2 |
+| 15 | Common Slide-Over Drawer Component | Reusable `SlideOverDrawer.tsx` with backdrop blur, smooth slide transition, Escape handling | M2 | R3 |
+| 16 | Design System Typography, Badges & Spinners | Standardized badges, responsive action icons, loading state spinners on all actions | M2 | R3 |
+| 17 | Rich Empty States Across Desks | Informative empty states with icons and action triggers across orders, products, bills, users | M2 | R3 |
+| 18 | Mobile Product Detail Modal | Tap catalog card for SKU specs, multipliers, volume slabs, interactive margin calculator | M3 | R4 |
+| 19 | Mobile My Orders Screen & OTP Card | Dedicated orders screen, 5-stage timeline, Delivery OTP card, order breakdown | M3 | R4 |
+| 20 | Mobile Store Profile Screen | View and edit Kirana store profile (name, owner, phone, address, credit terms) | M3 | R4 |
+| 21 | Android Metro Bundle Generation | Clean offline JS bundle generation (`index.android.bundle`) | M3 | R4 |
+| 22 | Android Release APK Compilation | Compile signed standalone release APK using Gradle with JDK 21 (`assembleRelease`) | M3 | R4 |
+| 23 | Release APK Dual Deployment | Publish APK to `apps/web/public/downloads/` and `release/` | M3 | R4 |
+| 24 | Backend CRUD Integration Tests | New automated test suite `apps/api/tests/crud-expansion.test.js` | M1 | R5 |
+| 25 | Cloud Verification Suite Expansion | Expand `scripts/verify-cloud.js` from 80 to 90 assertions | M4 | R5 |
+| 26 | Git Commit & Push to Main | Atomic versioned commit and push to remote repository | M4 | R5 |
+| 27 | Coolify VPS Live Redeployment | Trigger redeployments of `b2b-api` and `b2b-web` on VPS (`server.anagataitsolutions.in`) | M4 | R5 |
+| 28 | Live Production Multi-Persona & Cloud Verification | 100% pass on `test-personas.js` and `verify-cloud.js` (90/90 assertions) | M4 | R5 |
 
 ## Milestones
 | # | Name | Scope | Dependencies | Status |
 |---|---|---|---|---|
-| M1 | Backend Domain Core, Schemas, & API Expansion | Database DDL (`docker/init.sql`), data-store, endpoints for Signups (R1), KYC review & WhatsApp creds (R1), Assisted Onboarding with 15m GPS collision 409 (R2), Version polling (R3), Master SKU / Stock locks / Fallback (R4), Beat Auto-build & Territory Transfer (R6) | none | IN_PROGRESS |
-| M2 | Algorithmic Engines & Universal ERP Importer | Packages/shared & API services: Buy-Box composite scoring (R4), Fuzzy ERP column mapper & persistent memory (R5), Tally XML & Marg CSV parsers with FEFO (R5), 2-Opt spatial route clustering (R6), Sell-through velocity intelligence & slow-moving alerts (R7) | M1 | PLANNED |
-| M3 | Next.js Web Portal Enterprise Expansion | Public signups (`/signup/retailer`, `/signup/seller`) with OSM GPS picker, Super Admin KYC Review Desk, PWA `sw.js` version polling toast, Supply BD Agent Portal, Multi-Seller Master SKU cards, Universal ERP Column Mapper UI, Margin Badges & Cart Profitability, Super Admin Operations HQ | M1, M2 | PLANNED |
-| M4 | Mobile Application Updates & OTA Engine | React Native / Expo: Field Agent assisted Kirana onboarding form with 15m collision check, in-app OTA update banner with direct APK download, type-check & build verification | M1, M3 | PLANNED |
-| M5 | Automated Cloud Verification & Coolify Deployment | Expand `scripts/verify-cloud.js` to 69 test assertions, deploy API and Web containers to Coolify VPS (`server.anagataitsolutions.in`), verify 100% passing tests against production domains with zero paid APIs | M1, M2, M3, M4 | PLANNED |
+| M1 | Backend API CRUD Hardening & Schemas | Fastify routes (`GET/PUT/DELETE /api/seller/products/:id`, `GET/PATCH /api/orders/:id`, `GET/PUT /api/retailers/:id`, `GET/PUT /api/users/:id`, `GET /api/pos/bills/:id`), `InMemoryDataStore`, `docker/init.sql`, and `tests/crud-expansion.test.js` | none | DONE |
+| M2 | Web Universal View & Edit CRUD, Orders & UX Polish | `SlideOverDrawer.tsx`, `SellerProductStudio.tsx` (View/Edit/Archive), `OrderDetailsDrawer.tsx`, `AgentCrmDashboard.tsx` (360/Edit), User desks (View/Edit), `RetailPosCheckoutDesk.tsx` (Bill History Drawer/Reprint), Kirana Retailer My Orders Tab & live polling, Design system polish | M1 | IN_PROGRESS |
+| M3 | React Native Mobile Parity & Standalone Release APK | `ProductDetailModal.tsx` with margin calculator, `RetailerOrdersScreen.tsx` with Delivery OTP, `RetailerProfileScreen.tsx`, sub-tab navigation in `App.tsx`, Metro bundle, Gradle release APK compilation, dual deployment | M1 | PLANNED |
+| M4 | Cloud Deployment & Live Verification | Expand `scripts/verify-cloud.js` to 90 assertions, Git commit & push, Coolify redeployment on VPS, 100% test pass on `test-personas.js` and `verify-cloud.js` | M1, M2, M3 | PLANNED |
 
 ## Interface Contracts
-### Public & KYC API
-- `POST /api/signup/retailer` -> Body: `{ storeName, ownerName, phone, address, latitude, longitude, documentType, documentUrl }`. Returns 201 `{ status: "PENDING_APPROVAL", retailerId }`.
-- `POST /api/signup/seller` -> Body: `{ businessName, contactName, phone, gstin, pan, address, latitude, longitude, documentUrl }`. Returns 201 `{ status: "PENDING_APPROVAL", sellerId }`.
-- `POST /api/kyc/upload` -> Body: `{ fileData, fileName, mimeType }`. Returns 200 `{ documentUrl: string }`.
-- `GET /api/kyc/pending` -> Returns Array of pending retailer & seller applications with documents.
-- `POST /api/kyc/review` -> Body: `{ entityId, entityType: 'RETAILER'|'SELLER', decision: 'APPROVE'|'REJECT', reason?: string }`.
-  - On `APPROVE`: Generates Login ID & random secure password, updates status to `ACTIVE`, triggers Evolution API WhatsApp with credentials & URL. Returns 200 `{ status: "ACTIVE", credentials: { loginId, password } }`.
-  - On `REJECT`: Sets status `REJECTED`, dispatches WhatsApp notification with rejection reason. Returns 200 `{ status: "REJECTED" }`.
 
-### Assisted Onboarding API
-- `POST /api/onboarding` -> Body: `{ agentId, storeName, ownerName, phone, address, latitude, longitude }`.
-  - If existing retailer within 15m (`distanceMeters < 15.0`) -> Returns HTTP 409 Conflict `{ error: "GPS_COLLISION_15M", message: "Store already exists within 15 meters" }`.
-  - If phone exists -> Returns HTTP 409 Conflict `{ error: "PHONE_DUPLICATE", message: "Phone number already registered" }`.
-  - On success -> Generates Login ID & secure password, links to user profile, dispatches WhatsApp welcome message, returns 201 `{ retailerId, credentials: { loginId, password } }`.
+### 1. Seller Products CRUD
+- `GET /api/seller/products/:id`: Returns 200 `{ success: true, product }`.
+- `PUT /api/seller/products/:id`: Body: `{ name?, category?, brand?, description?, hsnCode?, gstRatePct?, imageUrl?, status?, isArchived?, wholesalePrice?, mrp?, stock?, moq?, unitTitle?, packMultiplier?, cartonMultiplier?, pricingSlabs?, isActive?, skus? }`. Updates attributes, recalculates `marginPct = ((mrp - wholesalePrice) / mrp) * 100`, returns 200 `{ success: true, message: "Product updated successfully", product }`.
+- `DELETE /api/seller/products/:id?archive=true`: If `archive=true`, sets `status = "ARCHIVED"` and `isArchived = true`. If `hardDelete=true`, splices from store. Returns 200 `{ success: true, message: string, product? }`.
 
-### Version & Updates API
-- `GET /api/app/version` -> Returns 200 `{ version: "2.1.0", buildHash: string, timestamp: string, apkDownloadUrl: "https://b2b.anagataitsolutions.in/downloads/b2b-sales-aggregator.apk" }`.
+### 2. Universal Order Details & Status
+- `GET /api/orders/:id`: Resolves by master `orderId` or vendor `subOrderId`. Enriches with store details, buyer KYC, complete line items, delivery OTP, and invoice reference. Returns 200 `{ success: true, order }`.
+- `PATCH /api/orders/:id`: Body: `{ status?: "RECEIVED" | "ACCEPTED" | "PACKED" | "DISPATCHED" | "DELIVERED", deliveryNotes?, paymentStatus? }`. On `DELIVERED`, logs transit duration in minutes. Returns 200 `{ success: true, order }`.
 
-### Marketplace, Buy-Box & Orders API
-- `GET /api/marketplace/buy-box/:masterSkuId?lat=:lat&lon=:lon` -> Returns `{ masterSku, buyBoxWinner: { sellerId, price, landedCost, proximityKm, reliabilityScore, slaScore, totalScore }, alternateSellers: [...] }`.
-- `POST /api/orders/sub-orders/:id/fallback-reroute` -> Reroutes sub-order to secondary seller upon primary SLA breach, locks secondary stock, sends WhatsApp alert.
+### 3. Retailer Store Profile & CRM
+- `GET /api/retailers/:id`: Returns 200 `{ success: true, retailer: { id, storeName, ownerName, phone, address, latitude, longitude, creditLimit, paymentTerms, documents, kycStatus, ordersCount, lifetimeValue } }`.
+- `PUT /api/retailers/:id`: Body: `{ storeName?, ownerName?, phone?, address?, latitude?, longitude?, creditLimit?, paymentTerms?, documents? }`. Checks 15m collision if GPS changed. Returns 200 `{ success: true, retailer }`.
 
-### ERP & Beat Routing API
-- `POST /api/seller/catalog/fuzzy-map` -> Body: `{ headers: string[] }`. Returns 200 `{ mappings: Record<string, string>, confidenceScores: Record<string, number> }`.
-- `POST /api/seller/catalog/bulk-import` -> Body: `{ sellerId, format: 'CSV'|'XML', rawContent: string, columnMap?: Record<string, string>, dryRun?: boolean }`. Returns 200 `{ validCount, errorCount, errors: Array<{ row, field, error }>, preview: Array<any> }`.
-- `POST /api/beats/auto-build` -> Body: `{ agentId, storeIds?: string[], clusterSize?: number }`. Clusters stores into 15–25 store groups, executes 2-opt spatial TSP, assigns day schedules.
-- `POST /api/territory/transfer-store` -> Body: `{ storeId, fromAgentId, toAgentId, reason }`. Transfers store exclusivity with audit log.
+### 4. Universal User Registry
+- `GET /api/users/:id`: Returns 200 `{ success: true, user: { id, name, email, phone, role, title, status, permissions, organizationId, retailerId, lastLoginAt, auditLog } }`.
+- `PUT /api/users/:id`: Body: `{ name?, title?, role?, status?: "ACTIVE" | "SUSPENDED", permissions?: string[], organizationId?, retailerId? }`. Logs audit entry to store. Returns 200 `{ success: true, user }`.
 
-### Evolution API WhatsApp Contract
-- `POST https://evo.anagataitsolutions.in/message/sendText/:instance`
-- Headers: `{ apikey: "IefwSiekrTOn92twVtnlLcl3WEKiC8pz", Content-Type: "application/json" }`
-- Payload: `{ number: "91XXXXXXXXXX", text: "..." }`
+### 5. Retail POS Counter Bills
+- `GET /api/pos/bills/:id`: Returns 200 `{ success: true, bill: { id, billNumber, retailerId, items, subtotal, taxAmount, grandTotal, paymentMode, cashierName, createdAt, escPosThermalReceipt: string } }`.
 
 ## Code Layout
-- `packages/shared/src/`: Types, Geofence (`geofence.ts`), Buy-Box algorithm (`buy-box.ts`), ERP fuzzy matcher (`erp-matcher.ts`), Velocity intelligence (`velocity.ts`), 2-opt spatial routing (`tsp.ts`), ROI simulator (`roi-calculator.ts`)
-- `apps/api/src/`: Fastify server (`server.ts`), Configuration (`config.ts`), Services (`services/evolution.service.ts`, `services/minio.service.ts`), Data store (`store/data-store.ts`)
-- `apps/api/tests/`: Integration suites (`tests/api.test.js`, `tests/enterprise-expansion.test.js`)
-- `apps/web/src/`: Next.js pages (`/signup/retailer`, `/signup/seller`, `/`), components for Super Admin KYC, Supply BD, ERP Importer, Margin badges, PWA toast
-- `apps/web/public/`: `sw.js`, `manifest.json`, `downloads/b2b-sales-aggregator.apk`
-- `apps/mobile/src/`: Screens for Agent (with assisted onboarding), Seller, Retailer, and `OtaUpdateBanner.tsx`
-- `docker/`: Database initialization SQL (`docker/init.sql`)
-- `scripts/`: Cloud verification test suite (`scripts/verify-cloud.js`)
-
+- `apps/api/src/server.ts`: Fastify route definitions
+- `apps/api/src/store/data-store.ts`: In-memory data store methods
+- `apps/api/tests/crud-expansion.test.js`: Integration tests for CRUD routes
+- `apps/web/src/components/common/SlideOverDrawer.tsx`: Reusable drawer
+- `apps/web/src/components/seller/SellerProductStudio.tsx`: Seller catalog studio
+- `apps/web/src/components/orders/OrderDetailsDrawer.tsx`: Reusable order details drawer
+- `apps/web/src/components/crm/AgentCrmDashboard.tsx`: Agent CRM lead desk
+- `apps/web/src/components/users/TenantUserManagementDesk.tsx`: Tenant user desk
+- `apps/web/src/components/admin/SuperAdminUserRegistryDesk.tsx`: Super admin user desk
+- `apps/web/src/components/pos/RetailPosCheckoutDesk.tsx`: POS checkout desk
+- `apps/web/src/components/layout/AppShell.tsx`: Navigation items
+- `apps/web/src/app/page.tsx`: Workspace role tabs & My Orders view
+- `apps/mobile/src/screens/retailer/RetailerHomeScreen.tsx`: Catalog cards & ProductDetailModal
+- `apps/mobile/src/screens/retailer/RetailerOrdersScreen.tsx`: My Orders screen
+- `apps/mobile/src/screens/retailer/RetailerProfileScreen.tsx`: Store profile view/edit
+- `apps/mobile/App.tsx`: Role navigation and retailer sub-tabs
+- `scripts/verify-cloud.js`: Comprehensive cloud verification suite
+- `scripts/test-personas.js`: Multi-persona login verification

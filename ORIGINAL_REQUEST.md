@@ -125,5 +125,118 @@ Integrity mode: development
 
 ### Automated Cloud Verification
 - [ ] Comprehensive verification script (`verify-cloud.js` / new test suite) passes 100% of checks against the live Coolify deployment (`https://api-b2b.anagataitsolutions.in` and `https://b2b.anagataitsolutions.in`).
-- [ ] Zero paid external APIs utilized throughout the entire implementation.
+- [ ] Zero paid external APIs utilized throughout the entire stack.
+
+## 2026-09-07T16:11:04Z
+
+Audit and overhaul the Hyperlocal B2B Sales Aggregator platform across Web and Mobile environments, implementing universal View & Edit CRUD operations for all entities, fixing UX navigation gaps (including Retailer Order Tracking), and elevating the design to a commercial enterprise standard using our installed Antigravity skills.
+
+Working directory: `C:\Users\sanje\.gemini\antigravity\scratch\b2b-sales-aggregator`
+Integrity mode: development
+
+---
+
+## Audit Findings: Current State & Critical Gaps
+
+### What Is Working Well
+1. **Core Backend Microservices**: Multi-tenant authentication, RBAC, PostGIS 15m geofencing, dual Quick-PIN login, and WhatsApp OTP resets.
+2. **Deterministic Verification**: Automated 80-check cloud verification test suite passing 100% against live production on Coolify.
+3. **Specialized Tools**: Universal ERP column mapper, SFA 2-opt TSP route calculator, and Tally/Marg XML export.
+
+### What Is Broken / Missing (The User's Critique)
+1. **Missing View & Edit CRUD Across Core Entities**:
+   - **Seller Products**: Sellers can add products, but cannot edit wholesale prices, update stock, modify volume slabs, view full SKU specifications, or delete/archive products.
+   - **Seller Orders**: Sub-order list only has action buttons ("Dispatch" / "Verify OTP"). There is no way to open and inspect the full order (line items, pricing breakdown, buyer KYC details, store delivery address, or notes).
+   - **Retailer Experience**: Kirana retailers have no "My Orders" view to monitor past purchases, track order status transitions (`RECEIVED` -> `DISPATCHED` -> `DELIVERED`), inspect line items, access delivery OTPs, or download GST invoices.
+   - **Agent CRM Leads**: Field agents cannot view store verification documents or edit store profiles (owner phone, credit terms, shop address).
+   - **User & Staff Management**: Organization admins cannot edit staff permissions, change titles, reset passwords, or view staff activity history.
+   - **Retail POS Counter**: Cashiers cannot view past bills or inspect receipt line items.
+2. **UI/UX Enterprise Deficits**:
+   - Cluttered table rows lacking modern drawers/modals for secondary details.
+   - Missing empty states with clear calls to action.
+   - Inconsistent search and filter controls across tables.
+   - Mobile app (`apps/mobile`) lacks a Product Detail modal with margin breakdown, an Order History screen, and store profile editing.
+
+---
+
+## Requirements
+
+### R1. Universal View & Edit CRUD for All Entities (Web & API)
+- **Seller Catalog Studio (`SellerProductStudio.tsx`)**:
+  - Add **"View Details" Modal/Drawer**: High-resolution view of SKU specs, packaging multipliers (carton/pack), stock breakdown, volume discount slabs, and margin indicators.
+  - Add **"Edit Product" Modal**: Full editing of wholesale price, MRP, available stock, MOQ, volume discount slabs, description, and status with immediate API persistence (`PUT /api/seller/products/:id`).
+  - Add **"Delete / Archive Product"** with confirmation dialog.
+- **Order Details Drawer (Seller & Admin)**:
+  - Add an interactive **"Order Details" Drawer**: Complete line items table (SKU, product name, brand, quantity, unit rate, GST, item total), buyer profile (shop name, owner, phone, delivery address, geolocation), fulfillment timeline, and download buttons for GST Invoice and E-Way Bill.
+- **Agent CRM Store Lead Desk (`AgentCrmDashboard.tsx`)**:
+  - Add **"View Store" Drawer**: Store photos, OpenStreetMap coordinates, GSTIN/PAN documents, lifetime order history, and visit logs.
+  - Add **"Edit Store" Modal**: Update store name, owner name, contact number, address, credit limit, and payment terms (`PUT /api/retailers/:id`).
+- **Team & User Management (`TenantUserManagementDesk.tsx` & `SuperAdminUserRegistryDesk.tsx`)**:
+  - Add **"View User Profile" Drawer**: Permissions checklist, assigned store/warehouse, last login timestamp, and security audit log.
+  - Add **"Edit User" Modal**: Update name, staff title, role, granular permissions, and status (Active/Suspended) (`PUT /api/users/:id`).
+- **Retail POS Counter (`RetailPosCheckoutDesk.tsx`)**:
+  - Add **"Bill History" Drawer**: Search and view previous counter bills with line item breakdown and 1-click ESC/POS reprint.
+
+### R2. Retailer "My Orders" & Live Fulfillment Tracking
+- Add a dedicated **"My Orders" Tab** in the Kirana Retailer workspace:
+  - List all past and active B2B orders with status badges (`PENDING`, `ACCEPTED`, `PACKED`, `DISPATCHED`, `DELIVERED`).
+  - Prominent **Delivery OTP Card** for dispatched orders to share with delivery drivers.
+  - **"View Order Details"** modal with itemized pricing, gross profit calculations, and 1-click GST Tax Invoice download (`INV-2026-X`).
+  - Real-time status polling so status updates from the warehouse reflect live without manual reload.
+
+### R3. Enterprise UI/UX Design System Polish
+- Apply principles from `ui-ux-designer`, `tailwind-design-system`, and `kpi-dashboard-design`:
+  - Standardize modal and drawer animations (smooth slide-over drawers with backdrop blur).
+  - Consistent typography, badge colors, and interactive hover/focus states across all roles.
+  - Rich empty states across all tabs (orders, products, leads, staff, bills) with helpful icons and direct action triggers.
+  - Accessible form validation with clear inline error messages and loading spinners on all action buttons.
+
+### R4. React Native Mobile Application Parity & Release APK
+- Modernize `apps/mobile`:
+  - **Product Detail Modal**: Tap any catalog card to inspect product specs, unit/carton multipliers, tiered volume slabs, and retail resale margin calculator.
+  - **My Orders Screen**: Tab/screen showing recent B2B orders, delivery OTP, order status timeline, and order breakdown.
+  - **Store Profile Screen**: View and edit Kirana store profile details.
+- Recompile Android release APK:
+  - Generate clean Metro bundle and execute Gradle release build.
+  - Deploy updated APK to `apps/web/public/downloads/b2b-sales-aggregator.apk` and `release/b2b-sales-aggregator.apk`.
+
+### R5. Backend API CRUD Hardening & Live Deployment
+- Implement or expand Fastify routes:
+  - `GET /api/seller/products/:id`, `PUT /api/seller/products/:id`, `DELETE /api/seller/products/:id`
+  - `GET /api/orders/:id`, `PATCH /api/orders/:id`
+  - `GET /api/retailers/:id`, `PUT /api/retailers/:id`
+  - `GET /api/users/:id`, `PUT /api/users/:id`
+  - `GET /api/pos/bills`, `GET /api/pos/bills/:id`
+- Commit and push to GitHub `main`, redeploy `b2b-api` and `b2b-web` on Coolify.
+- Verify 100% pass on `test-personas.js` and `verify-cloud.js`.
+
+---
+
+## Acceptance Criteria
+
+### Universal View & Edit CRUD
+- [ ] Sellers can view comprehensive product details in a modal/drawer and edit wholesale price, stock, MOQ, and volume slabs with instant database persistence.
+- [ ] Sellers and Admins can click any order to open an Order Details Drawer showing full line items, delivery address, buyer KYC, and financial summary.
+- [ ] Field Agents can view full store details (including GPS and documents) and edit store contact info and credit terms.
+- [ ] Organization Admins can view staff details and edit staff titles, roles, and granular permissions.
+- [ ] Retail POS Counter cashiers can view past generated bills and reprint receipts.
+
+### Retailer Experience
+- [ ] Kirana Retailers have an accessible "My Orders" tab displaying order history, status timeline, delivery OTP, and invoice downloads.
+- [ ] Retailers can click any past order to inspect itemized pricing and delivery progress.
+
+### UI/UX Standards
+- [ ] All tables have responsive search, clean badges, consistent action icon buttons, and empty-state placeholders.
+- [ ] All forms provide explicit validation feedback, loading state spinners, and toast confirmations.
+
+### Mobile App & Release APK
+- [ ] React Native mobile app features an interactive Product Detail modal with margin calculator and an Order Tracking screen with delivery OTP.
+- [ ] Android release APK compiles cleanly and is downloadable from `https://b2b.anagataitsolutions.in/downloads/b2b-sales-aggregator.apk`.
+
+### Production Deployment & Verification
+- [ ] `b2b-api` and `b2b-web` deploy successfully to Coolify on Ubuntu 24.04 VPS.
+- [ ] All 1-click demo personas authenticate with HTTP 200 via `test-personas.js`.
+- [ ] Full cloud verification suite (`verify-cloud.js`) passes 100% of assertions with 0 failures.
+- [ ] Zero paid external APIs utilized throughout the entire stack.
+
 

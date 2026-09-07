@@ -31,8 +31,12 @@ import {
   Clock,
   Send,
   Bluetooth,
-  Receipt
+  Receipt,
+  Eye,
+  Filter
 } from "lucide-react";
+import SlideOverDrawer from "../common/SlideOverDrawer";
+import EmptyState from "../common/EmptyState";
 
 interface RetailPosCheckoutDeskProps {
   apiBase: string;
@@ -81,6 +85,13 @@ export default function RetailPosCheckoutDesk({
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Bill History Slide-over Drawer State
+  const [isBillHistoryOpen, setIsBillHistoryOpen] = useState(false);
+  const [billSearchQuery, setBillSearchQuery] = useState("");
+  const [billPaymentFilter, setBillPaymentFilter] = useState("ALL");
+  const [selectedBillForReprint, setSelectedBillForReprint] = useState<any | null>(null);
+  const [expandedBillId, setExpandedBillId] = useState<string | null>(null);
+
   // Search and category filter
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
@@ -126,6 +137,17 @@ export default function RetailPosCheckoutDesk({
 
   // Completed receipt view
   const [completedBill, setCompletedBill] = useState<any | null>(null);
+
+  // Filtered bills for the Slide-Over Drawer
+  const filteredBills = recentBills.filter((b) => {
+    const matchesSearch =
+      !billSearchQuery ||
+      b.billNumber?.toLowerCase().includes(billSearchQuery.toLowerCase()) ||
+      b.customerName?.toLowerCase().includes(billSearchQuery.toLowerCase());
+    const matchesPayment =
+      billPaymentFilter === "ALL" || b.paymentMode === billPaymentFilter;
+    return matchesSearch && matchesPayment;
+  });
 
   useEffect(() => {
     loadPosData();
@@ -603,6 +625,14 @@ export default function RetailPosCheckoutDesk({
         </div>
 
         <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setIsBillHistoryOpen(true)}
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold rounded-lg flex items-center gap-1.5 transition border border-indigo-200 shadow-sm"
+          >
+            <Receipt className="w-3.5 h-3.5" />
+            Receipt History Drawer ({recentBills.length})
+          </button>
           <button
             onClick={() => setShowAddSkuModal(true)}
             className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1 transition"
@@ -1421,6 +1451,156 @@ export default function RetailPosCheckoutDesk({
           </div>
         </div>
       )}
+
+      {/* ================= DRAWER: RECEIPT BILL HISTORY ================= */}
+      <SlideOverDrawer
+        isOpen={isBillHistoryOpen}
+        onClose={() => setIsBillHistoryOpen(false)}
+        title="POS Receipt Bill History"
+        subtitle="Search, audit line items, and reprint 2-inch/3-inch thermal receipts"
+        size="lg"
+      >
+        <div className="p-6 space-y-4">
+          {/* Filters & Search */}
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={billSearchQuery}
+                onChange={(e) => setBillSearchQuery(e.target.value)}
+                placeholder="Search by Bill # or Customer Name..."
+                className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex gap-2">
+              {(["ALL", "CASH", "UPI", "KHATA"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setBillPaymentFilter(mode)}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg border transition ${
+                    billPaymentFilter === mode
+                      ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                      : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  {mode}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* List of Bills */}
+          {filteredBills.length === 0 ? (
+            <EmptyState
+              icon={Receipt}
+              title="No bills found"
+              description="No POS transactions match your current search or filter criteria."
+              compact
+            />
+          ) : (
+            <div className="space-y-3">
+              {filteredBills.map((bill) => {
+                const isExpanded = expandedBillId === bill.id;
+                return (
+                  <div
+                    key={bill.id}
+                    className="border border-slate-200 rounded-xl bg-white p-4 space-y-3 hover:border-slate-300 transition shadow-sm"
+                  >
+                    <div className="flex items-start justify-between">
+                      <div>
+                        <div className="font-mono font-bold text-slate-900 text-sm flex items-center gap-2">
+                          <span>{bill.billNumber}</span>
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                              bill.paymentMode === "CASH"
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : bill.paymentMode === "UPI"
+                                ? "bg-blue-50 text-blue-700 border border-blue-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                            }`}
+                          >
+                            {bill.paymentMode}
+                          </span>
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          {bill.customerName ? `Customer: ${bill.customerName}` : "Walk-in Customer"} •{" "}
+                          {new Date(bill.createdAt).toLocaleDateString([], {
+                            month: "short",
+                            day: "numeric",
+                          })}{" "}
+                          at{" "}
+                          {new Date(bill.createdAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-black text-slate-900 text-base">₹{bill.grandTotal}</div>
+                        <div className="text-[11px] text-slate-400">
+                          {bill.items?.length || 0} items
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedBillId(isExpanded ? null : bill.id)
+                        }
+                        className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                      >
+                        {isExpanded ? "Hide Line Items" : "View Line Items"}
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setCompletedBill(bill)}
+                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg flex items-center gap-1 transition"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          Thermal Slip
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Expandable Line Items Table */}
+                    {isExpanded && (
+                      <div className="mt-3 pt-3 border-t border-slate-200/60 space-y-2 bg-slate-50 p-3 rounded-lg">
+                        <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                          Bill Line Items
+                        </div>
+                        <div className="divide-y divide-slate-200 text-xs">
+                          {bill.items?.map((item: any, idx: number) => (
+                            <div key={idx} className="py-1.5 flex justify-between">
+                              <div>
+                                <span className="font-medium text-slate-800">{item.name}</span>
+                                {item.isLoose && (
+                                  <span className="ml-1 text-[10px] text-indigo-600 bg-indigo-50 px-1 rounded">
+                                    Loose ({item.weightGrams}g)
+                                  </span>
+                                )}
+                                <div className="text-[10px] text-slate-400">
+                                  Qty: {item.quantity} × ₹{item.unitPrice}
+                                </div>
+                              </div>
+                              <span className="font-bold text-slate-900">₹{item.totalPrice}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </SlideOverDrawer>
     </div>
   );
 }

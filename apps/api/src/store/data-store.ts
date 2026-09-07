@@ -290,6 +290,7 @@ export interface DataStoreRetailPosBill {
   customerId?: string;
   customerName?: string;
   customerPhone?: string;
+  cashierName?: string;
   paymentMode: PosPaymentMode;
   cashAmount: number;
   upiAmount: number;
@@ -297,11 +298,14 @@ export interface DataStoreRetailPosBill {
   subtotal: number;
   discountTotal: number;
   taxTotal: number;
+  taxAmount?: number;
   roundOff: number;
   grandTotal: number;
   items: DataStoreRetailPosBillItem[];
   printedAt?: string;
   whatsappReceiptSent: boolean;
+  escPosReceipt?: string;
+  escPosThermalReceipt?: string;
   createdAt: string;
 }
 
@@ -400,6 +404,7 @@ export interface DataStoreUser {
   id: string;
   phone: string;
   name: string;
+  email?: string;
   role: "SUPER_ADMIN" | "SELLER_ADMIN" | "SELLER_STAFF" | "SALES_AGENT" | "RETAILER" | "RETAILER_STAFF" | "SUPPLY_BD_AGENT";
   status: "ACTIVE" | "PENDING_KYC" | "PENDING_APPROVAL" | "SUSPENDED";
   loginId?: string;
@@ -638,6 +643,8 @@ export interface DataStoreProduct {
   gstRatePct: number;
   marginPct: number;
   imageUrl?: string;
+  status?: "ACTIVE" | "ARCHIVED" | "DRAFT";
+  isArchived?: boolean;
   skus: DataStoreProductSku[];
 }
 
@@ -769,11 +776,12 @@ export interface DataStoreSubOrder {
   subtotal: number;
   taxAmount: number;
   grandTotal: number;
-  status: "RECEIVED" | "ACCEPTED" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
+  status: "RECEIVED" | "ACCEPTED" | "PACKED" | "DISPATCHED" | "DELIVERED" | "CANCELLED";
   paymentTerm: PaymentTerm;
   paymentStatus: "UNPAID" | "PAID" | "PARTIALLY_PAID";
   creditDueDate?: string;
   deliveryOtp: string;
+  deliveryNotes?: string;
   dispatchTime?: string;
   deliveryTime?: string;
   transitDurationMinutes?: number;
@@ -1861,6 +1869,111 @@ class InMemoryDataStore {
             }
           ],
           createdAt: "2026-09-05T10:00:00Z"
+        }
+      ]
+    },
+    {
+      id: "ord_sample_01",
+      orderNumber: "ORD-871718",
+      retailerId: "ret_gupta_kirana",
+      retailerShopName: "Gupta Kirana & General Store",
+      retailerPhone: "9555555555",
+      placedByAgentId: "usr_agent_1",
+      placedByAgentName: "Rahul Sharma",
+      totalAmount: 6992.90,
+      paymentTerm: "NET_7",
+      paymentStatus: "UNPAID",
+      status: "PARTIALLY_DELIVERED",
+      createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
+      subOrders: [
+        {
+          id: "subord_sample_fmcg",
+          masterOrderId: "ord_sample_01",
+          organizationId: "org_anagata_fmcg",
+          organizationName: "Anagata FMCG Wholesale",
+          subtotal: 3810.00,
+          taxAmount: 341.30,
+          grandTotal: 4151.30,
+          status: "DELIVERED",
+          paymentTerm: "NET_7",
+          paymentStatus: "UNPAID",
+          deliveryOtp: "4871",
+          dispatchTime: new Date(Date.now() - 105 * 60 * 1000).toISOString(),
+          deliveryTime: new Date(Date.now() - 83 * 60 * 1000).toISOString(),
+          transitDurationMinutes: 22,
+          trackingHistory: [
+            { status: "RECEIVED", title: "Order Placed", description: "Order booked by sales agent", timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(), completed: true },
+            { status: "ACCEPTED", title: "Wholesaler Accepted", description: "Inventory reserved at warehouse", timestamp: new Date(Date.now() - 115 * 60 * 1000).toISOString(), completed: true },
+            { status: "PACKED", title: "Packed & Invoiced", description: "Cartons sealed with barcode labels", timestamp: new Date(Date.now() - 110 * 60 * 1000).toISOString(), completed: true },
+            { status: "DISPATCHED", title: "Out for Delivery", description: "Dispatched via Delivery Van", timestamp: new Date(Date.now() - 105 * 60 * 1000).toISOString(), completed: true },
+            { status: "DELIVERED", title: "Delivered & Verified", description: "Delivery confirmed via OTP 4871", timestamp: new Date(Date.now() - 83 * 60 * 1000).toISOString(), completed: true }
+          ],
+          items: [
+            {
+              id: "item_parle_01",
+              subOrderId: "subord_sample_fmcg",
+              productSkuId: "sku_parle_carton",
+              productName: "Parle-G Glucose Biscuits (80g)",
+              skuCode: "PARLE-G-80G-CTN-72",
+              unitTitle: "Master Carton (72 packets)",
+              quantity: 2,
+              unitPrice: 580.00,
+              taxPct: 18.00,
+              taxAmount: 208.80,
+              totalPrice: 1368.80
+            },
+            {
+              id: "item_tata_01",
+              subOrderId: "subord_sample_fmcg",
+              productSkuId: "sku_tata_tea_box",
+              productName: "Tata Tea Gold (250g)",
+              skuCode: "TATA-GOLD-250G-BX-20",
+              unitTitle: "Wholesale Bundle (20 packs)",
+              quantity: 1,
+              unitPrice: 2650.00,
+              taxPct: 5.00,
+              taxAmount: 132.50,
+              totalPrice: 2782.50
+            }
+          ],
+          createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+        },
+        {
+          id: "subord_sample_bev",
+          masterOrderId: "ord_sample_01",
+          organizationId: "org_awadh_beverages",
+          organizationName: "Awadh Beverages & Confectionery",
+          subtotal: 2220.00,
+          taxAmount: 621.60,
+          grandTotal: 2841.60,
+          status: "DISPATCHED",
+          paymentTerm: "NET_7",
+          paymentStatus: "UNPAID",
+          deliveryOtp: "8488",
+          dispatchTime: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+          trackingHistory: [
+            { status: "RECEIVED", title: "Order Placed", description: "Order booked by sales agent", timestamp: new Date(Date.now() - 120 * 60 * 1000).toISOString(), completed: true },
+            { status: "ACCEPTED", title: "Wholesaler Accepted", description: "Cold storage crates allocated", timestamp: new Date(Date.now() - 90 * 60 * 1000).toISOString(), completed: true },
+            { status: "PACKED", title: "Packed & Invoiced", description: "Crates staged for loading", timestamp: new Date(Date.now() - 60 * 60 * 1000).toISOString(), completed: true },
+            { status: "DISPATCHED", title: "Out for Delivery", description: "Dispatched via Delivery LCV", timestamp: new Date(Date.now() - 45 * 60 * 1000).toISOString(), completed: true },
+            { status: "DELIVERED", title: "Delivered & Verified", description: "Pending delivery verification", timestamp: "", completed: false }
+          ],
+          items: [
+            {
+              id: "item_limca_01",
+              subOrderId: "subord_sample_bev",
+              productSkuId: "sku_limca_crate",
+              productName: "Limca Lemon Drink (750ml PET)",
+              skuCode: "LIMCA-750ML-CRATE-24",
+              unitTitle: "Cold Storage Crate (24 bottles)",
+              quantity: 3,
+              unitPrice: 740.00,
+              taxPct: 28.00,
+              taxAmount: 621.60,
+              totalPrice: 2841.60
+            }
+          ],
+          createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
         }
       ]
     }
@@ -4580,6 +4693,29 @@ ${voucherXmls}
       logs = logs.filter((l) => l.tenantId === filter.tenantId);
     }
     return logs.slice(0, filter?.limit || 100);
+  }
+
+  constructor() {
+    for (const p of this.products) {
+      if (!p.status) p.status = "ACTIVE";
+      if (p.isArchived === undefined) p.isArchived = false;
+    }
+  }
+
+  getProductById(id: string): DataStoreProduct | undefined {
+    return this.products.find((p) => p.id === id || p.skus?.some((s) => s.id === id || s.skuCode === id));
+  }
+
+  getRetailerById(id: string): DataStoreRetailerProfile | undefined {
+    return this.retailers.find((r) => r.id === id || r.userId === id);
+  }
+
+  getUserById(id: string): DataStoreUser | undefined {
+    return this.users.find((u) => u.id === id || u.loginId === id || u.phone === id);
+  }
+
+  getPosBillById(id: string): DataStoreRetailPosBill | undefined {
+    return this.retailPosBills.find((b) => b.id === id || b.billNumber === id);
   }
 }
 

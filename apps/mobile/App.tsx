@@ -14,6 +14,8 @@ import AgentBeatScreen from "./src/screens/agent/AgentBeatScreen";
 import SellerOrdersScreen from "./src/screens/seller/SellerOrdersScreen";
 import WholesaleTeamScreen from "./src/screens/seller/WholesaleTeamScreen";
 import RetailerHomeScreen from "./src/screens/retailer/RetailerHomeScreen";
+import RetailerOrdersScreen from "./src/screens/retailer/RetailerOrdersScreen";
+import RetailerProfileScreen from "./src/screens/retailer/RetailerProfileScreen";
 import RetailerPOSCounterScreen from "./src/screens/retailer/RetailerPOSCounterScreen";
 import SuperAdminHQScreen from "./src/screens/admin/SuperAdminHQScreen";
 
@@ -63,6 +65,7 @@ export default function App() {
   type RoleType = "SUPER_ADMIN" | "AGENT" | "SELLER" | "RETAILER" | "POS";
   const [role, setRole] = useState<RoleType>("POS");
   const [sellerSubTab, setSellerSubTab] = useState<"ORDERS" | "TEAM">("ORDERS");
+  const [retailerSubTab, setRetailerSubTab] = useState<"CATALOG" | "ORDERS" | "PROFILE">("CATALOG");
   const [showAccountsModal, setShowAccountsModal] = useState(false);
   const [otaUpdateAvailable, setOtaUpdateAvailable] = useState(false);
   const [remoteVersion, setRemoteVersion] = useState(CURRENT_VERSION);
@@ -183,13 +186,62 @@ export default function App() {
         )}
       </View>
 
+      {/* Retailer Sub-Tab Bar */}
+      {role === "RETAILER" && (
+        <View style={styles.retailerSubBar}>
+          <TouchableOpacity
+            style={[styles.retailerSubTab, retailerSubTab === "CATALOG" && styles.retailerSubTabActive]}
+            onPress={() => setRetailerSubTab("CATALOG")}
+          >
+            <Text
+              style={[
+                styles.retailerSubTabText,
+                retailerSubTab === "CATALOG" && styles.retailerSubTabTextActive
+              ]}
+            >
+              📦 Catalog
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.retailerSubTab, retailerSubTab === "ORDERS" && styles.retailerSubTabActive]}
+            onPress={() => setRetailerSubTab("ORDERS")}
+          >
+            <Text
+              style={[
+                styles.retailerSubTabText,
+                retailerSubTab === "ORDERS" && styles.retailerSubTabTextActive
+              ]}
+            >
+              🚚 Orders & OTP
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.retailerSubTab, retailerSubTab === "PROFILE" && styles.retailerSubTabActive]}
+            onPress={() => setRetailerSubTab("PROFILE")}
+          >
+            <Text
+              style={[
+                styles.retailerSubTabText,
+                retailerSubTab === "PROFILE" && styles.retailerSubTabTextActive
+              ]}
+            >
+              🏪 Store Profile
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Screen Render */}
       <View style={{ flex: 1 }}>
         {role === "SUPER_ADMIN" && <SuperAdminHQScreen />}
         {role === "AGENT" && <AgentBeatScreen />}
         {role === "SELLER" && sellerSubTab === "ORDERS" && <SellerOrdersScreen />}
         {role === "SELLER" && sellerSubTab === "TEAM" && <WholesaleTeamScreen />}
-        {role === "RETAILER" && <RetailerHomeScreen />}
+        {role === "RETAILER" && retailerSubTab === "CATALOG" && (
+          <RetailerHomeScreen onNavigateTab={(tab) => setRetailerSubTab(tab)} />
+        )}
+        {role === "RETAILER" && retailerSubTab === "ORDERS" && <RetailerOrdersScreen />}
+        {role === "RETAILER" && retailerSubTab === "PROFILE" && <RetailerProfileScreen />}
         {role === "POS" && <RetailerPOSCounterScreen />}
       </View>
 
@@ -276,6 +328,37 @@ const styles = StyleSheet.create({
   subTabActive: { backgroundColor: "#334155" },
   subTabText: { color: "#94a3b8", fontSize: 11, fontWeight: "600" },
   subTabTextActive: { color: "#ffffff", fontWeight: "bold" },
+  retailerSubBar: {
+    flexDirection: "row",
+    backgroundColor: "#0f172a",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderColor: "#1e293b",
+    gap: 6
+  },
+  retailerSubTab: {
+    flex: 1,
+    paddingVertical: 7,
+    alignItems: "center",
+    borderRadius: 6,
+    backgroundColor: "#1e293b",
+    borderWidth: 1,
+    borderColor: "#334155"
+  },
+  retailerSubTabActive: {
+    backgroundColor: "#059669",
+    borderColor: "#10b981"
+  },
+  retailerSubTabText: {
+    color: "#94a3b8",
+    fontSize: 11,
+    fontWeight: "600"
+  },
+  retailerSubTabTextActive: {
+    color: "#ffffff",
+    fontWeight: "bold"
+  },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "flex-end" },
   modalContent: { backgroundColor: "#0f172a", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, borderTopWidth: 1, borderColor: "#334155" },
   modalTitle: { color: "#ffffff", fontSize: 16, fontWeight: "bold" },

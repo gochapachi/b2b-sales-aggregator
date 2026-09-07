@@ -7,6 +7,7 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Drop existing tables in reverse dependency order
+DROP TABLE IF EXISTS retail_pos_bills CASCADE;
 DROP TABLE IF EXISTS visits CASCADE;
 DROP TABLE IF EXISTS territory_transfers CASCADE;
 DROP TABLE IF EXISTS stock_reservations CASCADE;
@@ -30,10 +31,16 @@ CREATE TABLE users (
     id VARCHAR(64) PRIMARY KEY,
     phone VARCHAR(20) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('SUPER_ADMIN', 'SELLER_ADMIN', 'SALES_AGENT', 'RETAILER', 'SUPPLY_BD_AGENT')),
+    role VARCHAR(50) NOT NULL CHECK (role IN ('SUPER_ADMIN', 'SELLER_ADMIN', 'SELLER_STAFF', 'SALES_AGENT', 'RETAILER', 'RETAILER_STAFF', 'SUPPLY_BD_AGENT')),
     status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PENDING_KYC', 'PENDING_APPROVAL', 'SUSPENDED')),
     login_id VARCHAR(64),
     password_hash VARCHAR(255),
+    staff_title VARCHAR(100),
+    permissions TEXT[],
+    organization_id VARCHAR(64),
+    retailer_id VARCHAR(64),
+    quick_pin VARCHAR(10),
+    last_login_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -86,6 +93,9 @@ CREATE TABLE retailers (
     rejection_reason TEXT,
     assigned_agent_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
     lead_stage VARCHAR(50) DEFAULT 'PROSPECT',
+    credit_limit NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    credit_dues NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    payment_term VARCHAR(50) NOT NULL DEFAULT 'COD',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -101,6 +111,9 @@ CREATE TABLE products (
     description TEXT,
     hsn_code VARCHAR(20),
     gst_rate_pct NUMERIC(5, 2) NOT NULL DEFAULT 18.00,
+    margin_pct NUMERIC(5, 2) NOT NULL DEFAULT 20.00,
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE',
+    is_archived BOOLEAN NOT NULL DEFAULT FALSE,
     image_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -114,11 +127,14 @@ CREATE TABLE product_skus (
     sku_code VARCHAR(100) NOT NULL UNIQUE,
     unit_title VARCHAR(100) NOT NULL,
     unit_multiplier INTEGER NOT NULL DEFAULT 1,
+    pack_multiplier INTEGER DEFAULT 1,
+    carton_multiplier INTEGER DEFAULT 1,
     mrp NUMERIC(10, 2) NOT NULL,
     wholesale_price NUMERIC(10, 2) NOT NULL,
     minimum_order_quantity INTEGER NOT NULL DEFAULT 1,
     stock_quantity INTEGER NOT NULL DEFAULT 100,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    pricing_slabs JSONB,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -171,8 +187,9 @@ CREATE TABLE sub_orders (
     subtotal NUMERIC(12, 2) NOT NULL,
     tax_amount NUMERIC(12, 2) NOT NULL,
     grand_total NUMERIC(12, 2) NOT NULL,
-    status VARCHAR(50) NOT NULL DEFAULT 'RECEIVED' CHECK (status IN ('RECEIVED', 'ACCEPTED', 'DISPATCHED', 'DELIVERED', 'CANCELLED')),
+    status VARCHAR(50) NOT NULL DEFAULT 'RECEIVED' CHECK (status IN ('RECEIVED', 'ACCEPTED', 'PACKED', 'DISPATCHED', 'DELIVERED', 'CANCELLED')),
     delivery_otp VARCHAR(10) NOT NULL,
+    delivery_notes TEXT,
     dispatch_time TIMESTAMP WITH TIME ZONE,
     delivery_time TIMESTAMP WITH TIME ZONE,
     transit_duration_minutes INTEGER,
@@ -283,6 +300,32 @@ CREATE TABLE territory_transfers (
     target_agent_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
     transferred_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
     reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------------------------------------------
+-- 15b. Retail POS Counter Bills
+-- -----------------------------------------------------------------------------
+CREATE TABLE retail_pos_bills (
+    id VARCHAR(64) PRIMARY KEY,
+    bill_number VARCHAR(50) UNIQUE NOT NULL,
+    retailer_id VARCHAR(64) NOT NULL REFERENCES retailers(id) ON DELETE CASCADE,
+    customer_id VARCHAR(64),
+    customer_name VARCHAR(255),
+    customer_phone VARCHAR(20),
+    cashier_name VARCHAR(255),
+    payment_mode VARCHAR(50) NOT NULL DEFAULT 'CASH',
+    cash_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    upi_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    khata_amount NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    subtotal NUMERIC(12, 2) NOT NULL,
+    discount_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    tax_total NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
+    round_off NUMERIC(6, 2) NOT NULL DEFAULT 0.00,
+    grand_total NUMERIC(12, 2) NOT NULL,
+    items JSONB NOT NULL,
+    printed_at TIMESTAMP WITH TIME ZONE,
+    whatsapp_receipt_sent BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
