@@ -453,54 +453,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Retailer Section Tabs */}
-            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200 flex-wrap">
-              <button
-                onClick={() => setRetailerTab("CATALOG")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  retailerTab === "CATALOG"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                Wholesale Catalog & Cart
-              </button>
-              <button
-                onClick={() => setRetailerTab("POS_COUNTER")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  retailerTab === "POS_COUNTER"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Receipt className="w-3.5 h-3.5 text-indigo-600" />
-                Kirana Retail POS (Counter Billing & Inwarding)
-              </button>
-              <button
-                onClick={() => setRetailerTab("SMART_TOOLS")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  retailerTab === "SMART_TOOLS"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                Retailer Smart Tools (Voice AI, Udhar Khata, Margins)
-              </button>
-              <button
-                onClick={() => setRetailerTab("STAFF")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  retailerTab === "STAFF"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 text-indigo-600" />
-                Counter Cashiers & Staff Team
-              </button>
-            </div>
-
             {retailerTab === "STAFF" && (
               <TenantUserManagementDesk
                 apiBase={API_BASE}
@@ -863,31 +815,6 @@ export default function Home() {
         {/* ================= 2. FIELD SALES AGENT SFA CRM VIEW ================= */}
         {activeRole === "AGENT" && (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200">
-              <button
-                onClick={() => setAgentTab("CRM")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  agentTab === "CRM"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <MapPin className="w-3.5 h-3.5" />
-                Beat Route & Store Visits
-              </button>
-              <button
-                onClick={() => setAgentTab("LEADERBOARD_COACHING")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  agentTab === "LEADERBOARD_COACHING"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Trophy className="w-3.5 h-3.5 text-amber-500" />
-                Gamified Leaderboard & Coaching Briefing
-              </button>
-            </div>
-
             {agentTab === "CRM" && (
               <>
                 <OpenStreetMapRoute apiBase={API_BASE} beatId="beat_hazratganj_mon" />
@@ -904,78 +831,6 @@ export default function Home() {
         {/* ================= 3. WHOLESALER / BRAND VIEW ================= */}
         {activeRole === "SELLER" && (
           <div className="space-y-6">
-            {/* Wholesaler Section Sub-Tabs */}
-            <div className="flex items-center gap-2 p-1.5 bg-slate-100 rounded-xl max-w-fit overflow-x-auto border border-slate-200/80">
-              <button
-                onClick={() => setSellerTab("ORDERS")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
-                  sellerTab === "ORDERS" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Orders & Consignments
-              </button>
-              <button
-                onClick={() => setSellerTab("PRODUCTS")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
-                  sellerTab === "PRODUCTS" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Product & Combo Studio
-              </button>
-              <button
-                onClick={() => setSellerTab("CREDIT")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
-                  sellerTab === "CREDIT" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                Retailer Credit & Ledgers
-              </button>
-              <button
-                onClick={() => setSellerTab("PACKING")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                  sellerTab === "PACKING" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Boxes className="w-3.5 h-3.5" />
-                FEFO Batches & Labels
-              </button>
-              <button
-                onClick={() => setSellerTab("LOGISTICS")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                  sellerTab === "LOGISTICS" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Truck className="w-3.5 h-3.5" />
-                Trip Run Sheets & Vans
-              </button>
-              <button
-                onClick={() => setSellerTab("ERP")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                  sellerTab === "ERP" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <FileSpreadsheet className="w-3.5 h-3.5" />
-                Tally XML & Marg ERP
-              </button>
-              <button
-                onClick={() => setSellerTab("ROI")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
-                  sellerTab === "ROI" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                ROI & Savings Simulator
-              </button>
-              <button
-                onClick={() => setSellerTab("STAFF")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
-                  sellerTab === "STAFF" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 text-indigo-600" />
-                Team & Staff RBAC
-              </button>
-            </div>
-
             {sellerTab === "STAFF" && (
               <TenantUserManagementDesk
                 apiBase={API_BASE}
@@ -1114,42 +969,6 @@ export default function Home() {
         {/* ================= 4. SUPER ADMIN HQ VIEW ================= */}
         {activeRole === "ADMIN" && (
           <div className="space-y-6">
-            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200 flex-wrap">
-              <button
-                onClick={() => setAdminTab("ANALYTICS")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  adminTab === "ANALYTICS"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <TrendingUp className="w-3.5 h-3.5 text-indigo-600" />
-                Platform Command, GMV & Telemetry
-              </button>
-              <button
-                onClick={() => setAdminTab("KYC")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  adminTab === "KYC"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5 text-indigo-600" />
-                Retailer KYC Verification Desk ({pendingRetailers.length})
-              </button>
-              <button
-                onClick={() => setAdminTab("USERS")}
-                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
-                  adminTab === "USERS"
-                    ? "bg-white text-indigo-700 shadow-sm"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-              >
-                <Users className="w-3.5 h-3.5 text-indigo-600" />
-                User Registry & Audit Logs
-              </button>
-            </div>
-
             {adminTab === "ANALYTICS" && (
               <SuperAdminAnalyticsDashboard apiBase={API_BASE} />
             )}
