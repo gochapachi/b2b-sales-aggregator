@@ -1092,9 +1092,9 @@ async function run() {
     stock: 250,
     moq: 2,
     pricingSlabs: [
-      { minQuantity: 2, maxQuantity: 9, discountPct: 0, effectiveWholesalePrice: 575 },
-      { minQuantity: 10, maxQuantity: 49, discountPct: 3.5, effectiveWholesalePrice: 554.88 },
-      { minQuantity: 50, maxQuantity: 999, discountPct: 6, effectiveWholesalePrice: 540.5 }
+      { minQuantity: 2, maxQuantity: 9, discountPct: 0, pricePerUnit: 575, effectiveWholesalePrice: 575 },
+      { minQuantity: 10, maxQuantity: 49, discountPct: 3.5, pricePerUnit: 554.88, effectiveWholesalePrice: 554.88 },
+      { minQuantity: 50, maxQuantity: 999, discountPct: 6, pricePerUnit: 540.5, effectiveWholesalePrice: 540.5 }
     ],
     description: "Premium Parle-G Glucose Biscuit Wholesale Carton"
   });
