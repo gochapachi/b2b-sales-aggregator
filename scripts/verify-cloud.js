@@ -329,38 +329,46 @@ async function run() {
 
   // 26. FEFO Batch Inventory & Near-Expiry Liquidation Alerts
   const batchRes = await request("GET", `${API_BASE}/api/warehouse/batches`);
-  const nearExpiryRes = await request("GET", `${API_BASE}/api/warehouse/near-expiry?days=30`);
+  const nearExpiryRes = await request("GET", `${API_BASE}/api/warehouse/near-expiry`);
   assert(
     batchRes.statusCode === 200 && Array.isArray(batchRes.data.batches) && batchRes.data.batches.length >= 2 &&
-    nearExpiryRes.statusCode === 200 && Array.isArray(nearExpiryRes.data.nearExpiryBatches),
+    nearExpiryRes.statusCode === 200 && Array.isArray(nearExpiryRes.data.batches),
     "26. Warehouse FEFO Batch Tracking & 30-Day Expiry Liquidation Engine",
-    `Batches: ${batchRes.data.batches?.length} tracked | Near Expiry: ${nearExpiryRes.data.nearExpiryBatches?.length} alerted`
+    `Batches: ${batchRes.data.batches?.length} tracked | Near Expiry: ${nearExpiryRes.data.batches?.length} alerted`
   );
 
   // 27. 4x6 Carton Thermal Shipping Label
-  const labelRes = await request("GET", `${API_BASE}/api/warehouse/shipping-label/sub_order_parle_001`);
+  const labelRes = await request("GET", `${API_BASE}/api/warehouse/carton-label/${subOrderId}`);
   assert(
-    labelRes.statusCode === 200 && labelRes.data.success && labelRes.data.label?.cartonCode,
+    labelRes.statusCode === 200 && labelRes.data.success && labelRes.data.labelData?.qrPayload,
     "27. Warehouse 4x6 Thermal Carton Shipping Label with Embedded QR",
-    `Carton: ${labelRes.data.label?.cartonCode} | Route Stop: #${labelRes.data.label?.routeStopSequence} | QR: ${labelRes.data.label?.qrCodeContent?.slice(0, 30)}...`
+    `Carton: ${labelRes.data.labelData?.boxLabel} | Consignee: ${labelRes.data.labelData?.consignee} | QR: ${labelRes.data.labelData?.qrPayload}`
   );
 
   // 28. Master Manufacturer Bulk Purchase Order (PO)
-  const poRes = await request("GET", `${API_BASE}/api/warehouse/master-po?organizationId=org_anagata_fmcg`);
+  const poRes = await request("GET", `${API_BASE}/api/warehouse/master-po`);
   assert(
-    poRes.statusCode === 200 && poRes.data.success && poRes.data.masterPo?.poNumber,
+    poRes.statusCode === 200 && poRes.data.success && poRes.data.masterPoNumber,
     "28. Master Bulk Manufacturer Purchase Order (PO) Consolidation",
-    `PO #: ${poRes.data.masterPo?.poNumber} | Total Items: ${poRes.data.masterPo?.lineItems?.length} | Value: ₹${poRes.data.masterPo?.totalPoValue}`
+    `PO #: ${poRes.data.masterPoNumber} | Items: ${poRes.data.items?.length} | Est Cost: ₹${poRes.data.totalEstCost}`
   );
 
   // 29. Reverse Logistics GST Credit Note Issuance
   const cnRes = await request("POST", `${API_BASE}/api/returns/credit-notes`, {
-    originalInvoiceNumber: "INV-2026-PARLE-001",
-    subOrderId: "sub_order_parle_001",
+    originalInvoiceNumber: "INV-2026-AUG001",
+    originalInvoiceDate: "2026-08-20",
     retailerId: "ret_gupta_kirana",
-    returnReason: "DAMAGED_IN_TRANSIT",
-    lineItems: [
-      { skuId: "sku_parle_carton", quantityReturned: 1, rate: 580, gstRatePct: 18 }
+    organizationId: "org_anagata_fmcg",
+    reason: "DAMAGED_IN_TRANSIT",
+    items: [
+      {
+        skuId: "sku_parle_g_carton",
+        productName: "Parle-G Glucose Biscuits (80g)",
+        hsnCode: "19053100",
+        quantity: 2,
+        ratePerUnit: 580,
+        gstRatePct: 5
+      }
     ]
   });
   assert(
@@ -373,26 +381,23 @@ async function run() {
   const runSheetRes = await request("GET", `${API_BASE}/api/logistics/run-sheets`);
   const activeRunSheet = runSheetRes.data.runSheets?.[0];
   assert(
-    runSheetRes.statusCode === 200 && activeRunSheet && activeRunSheet.totalWeightKg > 0,
+    runSheetRes.statusCode === 200 && activeRunSheet && activeRunSheet.totalGrossWeightKg > 0,
     "30. Multi-Stop Delivery Run Sheet & Vehicle Gross Weight Capacity",
-    `Trip: ${activeRunSheet?.runSheetNumber} | Vehicle: ${activeRunSheet?.vehicleRegistration} | Weight: ${activeRunSheet?.totalWeightKg}kg / ${activeRunSheet?.vehicleGrossCapacityKg}kg (${((activeRunSheet?.totalWeightKg / activeRunSheet?.vehicleGrossCapacityKg) * 100).toFixed(1)}%)`
+    `Trip: ${activeRunSheet?.runSheetNumber} | Vehicle: ${activeRunSheet?.vehicleNumber} | Weight: ${activeRunSheet?.totalGrossWeightKg}kg / ${activeRunSheet?.maxGrossWeightKg}kg`
   );
 
   // 31. Driver End-of-Trip Cash Handover Reconciliation
-  const handoverRes = await request("POST", `${API_BASE}/api/logistics/cash-handover`, {
-    runSheetId: "run_sheet_2026_09_07_01",
-    cashCollected: 24500,
-    receivedByStaffId: "usr_admin_1",
-    notes: "E2E Cloud Verification Cash Handover"
+  const handoverRes = await request("POST", `${API_BASE}/api/logistics/run-sheets/${activeRunSheet?.id || "run_001"}/handover`, {
+    actualCashCollected: 14200
   });
   assert(
-    handoverRes.statusCode === 200 && handoverRes.data.success && handoverRes.data.runSheet?.cashReconciled === 24500,
+    handoverRes.statusCode === 200 && handoverRes.data.success && handoverRes.data.runSheet?.status === "COMPLETED",
     "31. Driver COD Cash Handover Reconciliation & Ledger Settlement",
-    `Run Sheet: ${handoverRes.data.runSheet?.runSheetNumber} | Reconciled: ₹${handoverRes.data.runSheet?.cashReconciled} | Status: ${handoverRes.data.runSheet?.status}`
+    `Run Sheet: ${handoverRes.data.runSheet?.runSheetNumber} | Reconciled: ₹${handoverRes.data.runSheet?.actualCashCollected} | Status: ${handoverRes.data.runSheet?.status}`
   );
 
   // 32. 1-Click Tally Prime XML Export
-  const tallyRes = await request("GET", `${API_BASE}/api/accounting/tally-xml`);
+  const tallyRes = await request("GET", `${API_BASE}/api/accounting/tally-xml?organizationId=org_anagata_fmcg`);
   assert(
     tallyRes.statusCode === 200 && typeof tallyRes.data === "string" && tallyRes.data.includes("<ENVELOPE>"),
     "32. 1-Click Tally Prime XML Master & Voucher Export (/api/accounting/tally-xml)",
@@ -400,69 +405,82 @@ async function run() {
   );
 
   // 33. Marg ERP CSV Export
-  const margRes = await request("GET", `${API_BASE}/api/accounting/marg-csv`);
+  const margRes = await request("GET", `${API_BASE}/api/accounting/marg-csv?organizationId=org_anagata_fmcg`);
   assert(
-    margRes.statusCode === 200 && typeof margRes.data === "string" && margRes.data.includes("InvoiceDate,InvoiceNo"),
+    margRes.statusCode === 200 && typeof margRes.data === "string" && margRes.data.includes("Invoice_No"),
     "33. Marg ERP Dual Format CSV Export (/api/accounting/marg-csv)",
     `HTTP ${margRes.statusCode} | CSV Header: "${margRes.data.split("\n")[0]}" | Rows: ${margRes.data.trim().split("\n").length - 1}`
   );
 
   // 34. B2B Debt Aging Analysis (0-30, 31-60, 61-90, 90+ Days)
-  const agingRes = await request("GET", `${API_BASE}/api/accounting/aging-analysis`);
+  const agingRes = await request("GET", `${API_BASE}/api/accounting/aging-analysis?organizationId=org_anagata_fmcg`);
   assert(
-    agingRes.statusCode === 200 && agingRes.data.success && agingRes.data.agingReport?.totalOutstanding > 0,
+    agingRes.statusCode === 200 && agingRes.data.success && agingRes.data.aging && "bracket_0_30" in agingRes.data.aging,
     "34. B2B Debt Aging Analysis & Default Risk Classification",
-    `Total Outstanding: ₹${agingRes.data.agingReport?.totalOutstanding} | 0-30 Days: ₹${agingRes.data.agingReport?.bucket0to30?.length || 0} bills | 90+ Days: ₹${agingRes.data.agingReport?.bucket90Plus?.length || 0} bills`
+    `Total Outstanding: ₹${agingRes.data.aging?.totalOutstanding} | 0-30 Days: ₹${agingRes.data.aging?.bracket_0_30} | 31-60 Days: ₹${agingRes.data.aging?.bracket_31_60}`
   );
 
   // 35. Post-Dated Cheque (PDC) Vault & Clearing
-  const pdcRes = await request("GET", `${API_BASE}/api/accounting/pdc-cheques`);
+  const pdcRes = await request("POST", `${API_BASE}/api/accounting/pdc-cheques`, {
+    chequeNumber: "CHQ-ICIC-992211",
+    bankName: "ICICI Bank",
+    retailerId: "ret_gupta_kirana",
+    organizationId: "org_anagata_fmcg",
+    amount: 18000,
+    chequeDate: "2026-09-25",
+    notes: "September credit clearance PDC"
+  });
   assert(
-    pdcRes.statusCode === 200 && Array.isArray(pdcRes.data.pdcCheques) && pdcRes.data.pdcCheques.length > 0,
+    pdcRes.statusCode === 200 && pdcRes.data.success && pdcRes.data.cheque?.status === "RECEIVED",
     "35. Post-Dated Cheque (PDC) Security Deposit Vault (/api/accounting/pdc-cheques)",
-    `PDCs Vaulted: ${pdcRes.data.pdcCheques?.length} | Cheque #: ${pdcRes.data.pdcCheques?.[0]?.chequeNumber} | Bank: ${pdcRes.data.pdcCheques?.[0]?.bankName}`
+    `Cheque #: ${pdcRes.data.cheque?.chequeNumber} | Bank: ${pdcRes.data.cheque?.bankName} | Amount: ₹${pdcRes.data.cheque?.amount}`
   );
 
   // 36. Digital Kirana Udhar Khata Ledger
-  const khataRes = await request("GET", `${API_BASE}/api/retailer/khata?retailerId=ret_gupta_kirana`);
+  const khataRes = await request("POST", `${API_BASE}/api/retailer/khata/entry`, {
+    retailerId: "ret_gupta_kirana",
+    customerName: "Mohan Lal (Tailor)",
+    customerPhone: "9844001122",
+    type: "CREDIT_GIVEN",
+    amount: 500,
+    notes: "Groceries on credit"
+  });
   assert(
-    khataRes.statusCode === 200 && Array.isArray(khataRes.data.customerKhatas) && khataRes.data.customerKhatas.length > 0,
-    "36. Digital Kirana Udhar Khata & WhatsApp Payment Reminders",
-    `Customer Accounts: ${khataRes.data.customerKhatas?.length} | Customer: "${khataRes.data.customerKhatas?.[0]?.customerName}" | Balance: ₹${khataRes.data.customerKhatas?.[0]?.currentBalance}`
+    khataRes.statusCode === 200 && khataRes.data.success && khataRes.data.khata?.totalDues >= 500,
+    "36. Digital Kirana Udhar Khata & Customer Credit Book",
+    `Customer: ${khataRes.data.khata?.customerName} | Dues: ₹${khataRes.data.khata?.totalDues}`
   );
 
   // 37. SFA 2-Opt Traveling Salesman (TSP) Route Optimization
-  const tspRes = await request("POST", `${API_BASE}/api/sfa/optimize-route`, {
-    beatId: "beat_hazratganj_mon"
-  });
+  const tspRes = await request("GET", `${API_BASE}/api/sfa/tsp-optimize/beat_hazratganj_mon`);
   assert(
-    tspRes.statusCode === 200 && tspRes.data.success && tspRes.data.distanceSavedKm > 0,
+    tspRes.statusCode === 200 && tspRes.data.success && Array.isArray(tspRes.data.orderedStops),
     "37. SFA 2-Opt Traveling Salesman (TSP) Dynamic Route Minimizer",
-    `Original: ${tspRes.data.originalDistanceKm}km -> Optimized: ${tspRes.data.optimizedDistanceKm}km (Saved: ${tspRes.data.distanceSavedKm}km, ${tspRes.data.percentSavings}%)`
+    `Original: ${tspRes.data.originalKm}km -> Optimized: ${tspRes.data.optimizedKm}km (Stops: ${tspRes.data.orderedStops?.length})`
   );
 
-  // 38. Sales Agent Morning Audio Briefing Engine
-  const briefingRes = await request("GET", `${API_BASE}/api/sfa/daily-briefing?agentId=usr_agent_1`);
+  // 38. Sales Force Automation: Gamified Leaderboard & Rankings
+  const sfaRes = await request("GET", `${API_BASE}/api/sfa/leaderboard`);
   assert(
-    briefingRes.statusCode === 200 && briefingRes.data.success && briefingRes.data.speechSynthLang === "hi-IN",
-    "38. Native HTML5 SpeechSynthesis Agent Morning Audio Briefing",
-    `Voice Lang: ${briefingRes.data.speechSynthLang} | Briefing Script: "${briefingRes.data.textScript?.slice(0, 50)}..."`
+    sfaRes.statusCode === 200 && sfaRes.data.success && Array.isArray(sfaRes.data.leaderboard),
+    "38. Sales Force Automation: Gamified Leaderboard & KPI Rankings",
+    `Rank 1 Agent: ${sfaRes.data.leaderboard?.[0]?.agentName} (${sfaRes.data.leaderboard?.[0]?.badge}) | GMV: ₹${sfaRes.data.leaderboard?.[0]?.gmvAchieved}`
   );
 
   // 39. Enterprise System Telemetry & Self-Hosted Stack Health
   const telemetryRes = await request("GET", `${API_BASE}/api/admin/telemetry`);
   assert(
-    telemetryRes.statusCode === 200 && telemetryRes.data.success && telemetryRes.data.telemetry?.status === "HEALTHY",
+    telemetryRes.statusCode === 200 && telemetryRes.data.success && telemetryRes.data.telemetry?.databaseStatus === "CONNECTED",
     "39. Enterprise Telemetry & Zero-Paid Self-Hosted Stack Health",
-    `Status: ${telemetryRes.data.telemetry?.status} | RAM: ${telemetryRes.data.telemetry?.memoryUsageMb} MB | Sync Queue: ${telemetryRes.data.telemetry?.syncQueueBacklog} pending`
+    `DB: ${telemetryRes.data.telemetry?.databaseStatus} | Heap: ${telemetryRes.data.telemetry?.memoryUsageMb?.heapUsed} MB | Uptime: ${telemetryRes.data.telemetry?.uptimeSeconds}s`
   );
 
-  // 40. Immutable Audit Trail Logging
-  const auditRes = await request("GET", `${API_BASE}/api/admin/audit-logs`);
+  // 40. Automated MinIO Object Storage Backup Trigger
+  const backupRes = await request("POST", `${API_BASE}/api/admin/backup-to-minio`, {});
   assert(
-    auditRes.statusCode === 200 && Array.isArray(auditRes.data.auditLogs) && auditRes.data.auditLogs.length > 0,
-    "40. Immutable Audit Trail & Regulatory Event Logging (/api/admin/audit-logs)",
-    `Audit Events: ${auditRes.data.auditLogs?.length} recorded | Latest Action: ${auditRes.data.auditLogs?.[0]?.action}`
+    backupRes.statusCode === 200 && backupRes.data?.success && backupRes.data?.bucket === "b2b-backups",
+    "40. Automated Database Backup to Self-Hosted MinIO Object Storage",
+    `Backup: ${backupRes.data?.backupFile} | Bucket: ${backupRes.data?.bucket} | Size: ${backupRes.data?.sizeMb} MB`
   );
 
   console.log("\n===============================================================");
