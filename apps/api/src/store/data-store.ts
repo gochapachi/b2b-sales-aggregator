@@ -221,15 +221,18 @@ export interface DataStoreCoachingScorecard {
 
 export interface DataStoreAuditLog {
   id: string;
+  timestamp: string;
   userId: string;
   userName: string;
-  role: string;
+  role?: string;
+  userRole?: string;
   action: string;
-  details: string;
+  details?: any;
   previousState?: any;
   newState?: any;
   ipAddress?: string;
-  timestamp: string;
+  tenantType?: "SELLER" | "RETAILER" | "SUPER_ADMIN";
+  tenantId?: string;
 }
 
 export type PosPaymentMode = "CASH" | "UPI" | "KHATA" | "SPLIT";
@@ -397,10 +400,18 @@ export interface DataStoreUser {
   id: string;
   phone: string;
   name: string;
-  role: "SUPER_ADMIN" | "SELLER_ADMIN" | "SALES_AGENT" | "RETAILER" | "SUPPLY_BD_AGENT";
+  role: "SUPER_ADMIN" | "SELLER_ADMIN" | "SELLER_STAFF" | "SALES_AGENT" | "RETAILER" | "RETAILER_STAFF" | "SUPPLY_BD_AGENT";
   status: "ACTIVE" | "PENDING_KYC" | "PENDING_APPROVAL" | "SUSPENDED";
   loginId?: string;
   password?: string;
+  organizationId?: string;
+  retailerId?: string;
+  staffTitle?: string;
+  permissions?: string[];
+  quickPin?: string;
+  mustChangePassword?: boolean;
+  invitedByUserId?: string;
+  lastLoginAt?: string;
   createdAt: string;
 }
 
@@ -1022,51 +1033,169 @@ class InMemoryDataStore {
   users: DataStoreUser[] = [
     {
       id: "usr_superadmin",
+      loginId: "superadmin",
       phone: "9999999999",
+      password: "SuperAdmin@2026",
       name: "Platform SuperAdmin",
       role: "SUPER_ADMIN",
       status: "ACTIVE",
+      permissions: [
+        "CAN_CREATE_BILLS", "CAN_VIEW_POS_CATALOG", "CAN_SCAN_BARCODES", "CAN_INWARD_STOCK",
+        "CAN_VIEW_PROFIT_MARGINS", "CAN_OVERRIDE_DISCOUNTS", "CAN_MANAGE_UDHAR", "CAN_VIEW_ORDERS",
+        "CAN_PACK_BATCHES", "CAN_DISPATCH", "CAN_PRINT_LABELS", "CAN_VIEW_LEDGERS",
+        "CAN_EXPORT_ERP", "CAN_MANAGE_PDC", "CAN_MANAGE_CREDIT_LINES", "CAN_MANAGE_PRICING",
+        "CAN_MANAGE_USERS", "CAN_VIEW_ANALYTICS"
+      ],
       createdAt: new Date().toISOString()
     },
     {
       id: "usr_seller_1",
+      loginId: "seller_anagata",
       phone: "9888888888",
+      password: "Seller@2026",
       name: "Vikram Agarwal (Anagata FMCG)",
       role: "SELLER_ADMIN",
+      organizationId: "org_anagata_fmcg",
       status: "ACTIVE",
+      permissions: [
+        "CAN_VIEW_ORDERS", "CAN_PACK_BATCHES", "CAN_DISPATCH", "CAN_PRINT_LABELS",
+        "CAN_VIEW_LEDGERS", "CAN_EXPORT_ERP", "CAN_MANAGE_PDC", "CAN_MANAGE_CREDIT_LINES",
+        "CAN_MANAGE_PRICING", "CAN_MANAGE_USERS", "CAN_VIEW_ANALYTICS"
+      ],
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "usr_seller_picker_1",
+      loginId: "seller_picker",
+      phone: "9888888881",
+      password: "Picker@2026",
+      name: "Suresh Yadav (Warehouse Lead)",
+      role: "SELLER_STAFF",
+      staffTitle: "Warehouse Picker & Dispatcher",
+      organizationId: "org_anagata_fmcg",
+      status: "ACTIVE",
+      permissions: ["CAN_VIEW_ORDERS", "CAN_PACK_BATCHES", "CAN_DISPATCH", "CAN_PRINT_LABELS"],
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "usr_seller_accountant_1",
+      loginId: "seller_accountant",
+      phone: "9888888882",
+      password: "Accounts@2026",
+      name: "Rajesh Singhal (Head of Accounts)",
+      role: "SELLER_STAFF",
+      staffTitle: "Accountant & Finance Manager",
+      organizationId: "org_anagata_fmcg",
+      status: "ACTIVE",
+      permissions: ["CAN_VIEW_ORDERS", "CAN_VIEW_LEDGERS", "CAN_EXPORT_ERP", "CAN_MANAGE_PDC"],
       createdAt: new Date().toISOString()
     },
     {
       id: "usr_seller_2",
+      loginId: "seller_awadh",
       phone: "9777777777",
+      password: "Seller@2026",
       name: "Amit Tandon (Awadh Beverages)",
       role: "SELLER_ADMIN",
+      organizationId: "org_awadh_beverages",
       status: "ACTIVE",
+      permissions: [
+        "CAN_VIEW_ORDERS", "CAN_PACK_BATCHES", "CAN_DISPATCH", "CAN_PRINT_LABELS",
+        "CAN_VIEW_LEDGERS", "CAN_EXPORT_ERP", "CAN_MANAGE_PDC", "CAN_MANAGE_CREDIT_LINES",
+        "CAN_MANAGE_PRICING", "CAN_MANAGE_USERS", "CAN_VIEW_ANALYTICS"
+      ],
       createdAt: new Date().toISOString()
     },
     {
       id: "usr_agent_1",
+      loginId: "agent_rahul",
       phone: "9666666666",
+      password: "Agent@2026",
       name: "Rahul Sharma (Field Sales Agent)",
       role: "SALES_AGENT",
       status: "ACTIVE",
+      permissions: [
+        "CAN_VIEW_BEAT", "CAN_LOG_VISIT", "CAN_BOOK_ORDER", "CAN_COLLECT_PAYMENT", "CAN_ONBOARD_STORE"
+      ],
       createdAt: new Date().toISOString()
     },
     {
       id: "usr_ret_1",
+      loginId: "ret_gupta",
       phone: "9555555555",
-      name: "Ramesh Gupta",
+      password: "Kirana@2026",
+      name: "Ramesh Gupta (Proprietor)",
       role: "RETAILER",
+      retailerId: "ret_gupta_kirana",
       status: "ACTIVE",
+      permissions: [
+        "CAN_CREATE_BILLS", "CAN_VIEW_POS_CATALOG", "CAN_SCAN_BARCODES", "CAN_INWARD_STOCK",
+        "CAN_VIEW_PROFIT_MARGINS", "CAN_OVERRIDE_DISCOUNTS", "CAN_MANAGE_UDHAR", "CAN_MANAGE_USERS",
+        "CAN_VIEW_ANALYTICS"
+      ],
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "usr_ret_cashier_1",
+      loginId: "ret_cashier",
+      phone: "9555555551",
+      password: "Cashier@2026",
+      quickPin: "1234",
+      name: "Manoj Verma (Counter Cashier)",
+      role: "RETAILER_STAFF",
+      staffTitle: "Counter Billing Cashier",
+      retailerId: "ret_gupta_kirana",
+      status: "ACTIVE",
+      permissions: ["CAN_CREATE_BILLS", "CAN_VIEW_POS_CATALOG", "CAN_SCAN_BARCODES"],
+      createdAt: new Date().toISOString()
+    },
+    {
+      id: "usr_ret_helper_1",
+      loginId: "ret_helper",
+      phone: "9555555552",
+      password: "Helper@2026",
+      name: "Deepu Kumar (Stock Inwarder)",
+      role: "RETAILER_STAFF",
+      staffTitle: "Stock Inwarder & Helper",
+      retailerId: "ret_gupta_kirana",
+      status: "ACTIVE",
+      permissions: ["CAN_INWARD_STOCK", "CAN_VIEW_POS_CATALOG"],
       createdAt: new Date().toISOString()
     },
     {
       id: "usr_ret_2",
+      loginId: "ret_sharma",
       phone: "9444444444",
+      password: "Kirana@2026",
       name: "Suresh Sharma",
       role: "RETAILER",
+      retailerId: "ret_sharma_general",
       status: "PENDING_KYC",
+      permissions: ["CAN_VIEW_POS_CATALOG"],
       createdAt: new Date().toISOString()
+    }
+  ];
+
+  auditLogs: DataStoreAuditLog[] = [
+    {
+      id: "aud_init_1",
+      timestamp: new Date(Date.now() - 3600000).toISOString(),
+      userId: "usr_superadmin",
+      userName: "Platform SuperAdmin",
+      userRole: "SUPER_ADMIN",
+      action: "PLATFORM_INITIALIZATION",
+      details: { message: "Production B2B cluster initialized with 8 test accounts and RBAC matrix." }
+    },
+    {
+      id: "aud_init_2",
+      timestamp: new Date(Date.now() - 1800000).toISOString(),
+      userId: "usr_seller_1",
+      userName: "Vikram Agarwal",
+      userRole: "SELLER_ADMIN",
+      action: "SUB_USER_PROVISIONED",
+      details: { subUserId: "usr_seller_picker_1", staffTitle: "Warehouse Picker & Dispatcher" },
+      tenantType: "SELLER",
+      tenantId: "org_anagata_fmcg"
     }
   ];
 
@@ -2920,27 +3049,6 @@ class InMemoryDataStore {
     { cohortMonth: "Aug 2026", initialRetailersCount: 55, m1RetentionPct: 98, m2RetentionPct: 95, m3RetentionPct: 92, m6RetentionPct: 90, m12RetentionPct: 88 }
   ];
 
-  auditLogs: DataStoreAuditLog[] = [
-    {
-      id: "aud_001",
-      userId: "usr_seller_1",
-      userName: "Vikram Agarwal",
-      role: "SELLER_ADMIN",
-      action: "SCHEME_CREATED",
-      details: "Created Buy 10 Get 1 Free trade scheme for Parle-G",
-      timestamp: "2026-09-01T09:00:00Z"
-    },
-    {
-      id: "aud_002",
-      userId: "usr_seller_1",
-      userName: "Vikram Agarwal",
-      role: "SELLER_ADMIN",
-      action: "CREDIT_LIMIT_CHANGED",
-      details: "Increased credit limit for Gupta Kirana from ₹50,000 to ₹60,000",
-      timestamp: "2026-09-03T11:30:00Z"
-    }
-  ];
-
   // --- Helper Methods ---
 
   allocateBatchFefo(skuId: string, quantity: number) {
@@ -3506,24 +3614,35 @@ ${voucherXmls}
   logAudit(params: {
     userId: string;
     userName: string;
-    role: string;
+    role?: string;
+    userRole?: string;
     action: string;
-    details: string;
+    details?: any;
     previousState?: any;
     newState?: any;
+    ipAddress?: string;
+    tenantType?: "SELLER" | "RETAILER" | "SUPER_ADMIN";
+    tenantId?: string;
   }) {
     const log: DataStoreAuditLog = {
-      id: `aud_${Date.now()}`,
+      id: `aud_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`,
+      timestamp: new Date().toISOString(),
       userId: params.userId,
       userName: params.userName,
-      role: params.role,
+      role: params.role || params.userRole || "USER",
+      userRole: params.userRole || params.role || "USER",
       action: params.action,
       details: params.details,
       previousState: params.previousState,
       newState: params.newState,
-      timestamp: new Date().toISOString()
+      ipAddress: params.ipAddress,
+      tenantType: params.tenantType,
+      tenantId: params.tenantId
     };
     this.auditLogs.unshift(log);
+    if (this.auditLogs.length > 500) {
+      this.auditLogs.pop();
+    }
     return log;
   }
 
@@ -4333,6 +4452,134 @@ ${voucherXmls}
         rating: 4.85
       }))
     };
+  }
+
+  createTenantUser(
+    tenantType: "SELLER" | "RETAILER",
+    tenantId: string,
+    data: {
+      name: string;
+      phone: string;
+      staffTitle: string;
+      permissions: string[];
+      quickPin?: string;
+      invitedByUserId?: string;
+      customPassword?: string;
+    },
+    roleOverride?: "SELLER_STAFF" | "RETAILER_STAFF" | "SELLER_ADMIN" | "RETAILER"
+  ): { user: DataStoreUser; temporaryPassword: string } {
+    const cleanPhone = data.phone.replace(/[^0-9]/g, "");
+    const role = (roleOverride || (tenantType === "SELLER" ? "SELLER_STAFF" : "RETAILER_STAFF")) as any;
+    const userId = `usr_${tenantType.toLowerCase()}_${Date.now()}`;
+    const generatedPassword = data.customPassword || `${data.staffTitle.replace(/[^a-zA-Z]/g, "") || "Staff"}@${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const newUser: DataStoreUser = {
+      id: userId,
+      phone: cleanPhone,
+      name: data.name,
+      role,
+      status: "ACTIVE",
+      loginId: cleanPhone,
+      password: generatedPassword,
+      organizationId: tenantType === "SELLER" ? tenantId : undefined,
+      retailerId: tenantType === "RETAILER" ? tenantId : undefined,
+      staffTitle: data.staffTitle,
+      permissions: data.permissions || [],
+      quickPin: data.quickPin,
+      mustChangePassword: true,
+      invitedByUserId: data.invitedByUserId,
+      createdAt: new Date().toISOString()
+    };
+
+    this.users.push(newUser);
+
+    this.logAudit({
+      userId: data.invitedByUserId || userId,
+      userName: data.name,
+      userRole: role,
+      action: "TENANT_USER_CREATED",
+      details: { subUserId: userId, staffTitle: data.staffTitle, permissionsCount: newUser.permissions?.length || 0 },
+      tenantType,
+      tenantId
+    });
+
+    return { user: newUser, temporaryPassword: generatedPassword };
+  }
+
+  getTenantUsers(tenantType: "SELLER" | "RETAILER", tenantId: string): DataStoreUser[] {
+    if (tenantType === "SELLER") {
+      return this.users.filter((u) => u.organizationId === tenantId || (u.role === "SELLER_ADMIN" && u.organizationId === tenantId));
+    } else {
+      return this.users.filter((u) => u.retailerId === tenantId || (u.role === "RETAILER" && u.retailerId === tenantId));
+    }
+  }
+
+  updateTenantUser(userId: string, data: Partial<DataStoreUser>): DataStoreUser | null {
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) return null;
+    if (data.name) user.name = data.name;
+    if (data.phone) user.phone = data.phone;
+    if (data.staffTitle) user.staffTitle = data.staffTitle;
+    if (data.permissions) user.permissions = data.permissions;
+    if (data.quickPin !== undefined) user.quickPin = data.quickPin;
+    if (data.password) user.password = data.password;
+    if (data.status) user.status = data.status;
+
+    this.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "TENANT_USER_UPDATED",
+      details: { updatedFields: Object.keys(data) }
+    });
+
+    return user;
+  }
+
+  setTenantUserStatus(userId: string, status: "ACTIVE" | "SUSPENDED"): boolean {
+    const user = this.users.find((u) => u.id === userId);
+    if (!user) return false;
+    user.status = status;
+    this.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: status === "SUSPENDED" ? "TENANT_USER_SUSPENDED" : "TENANT_USER_ACTIVATED",
+      details: { targetUserId: userId, newStatus: status }
+    });
+    return true;
+  }
+
+  quickPinLogin(retailerId: string, quickPin: string): DataStoreUser | null {
+    const cashier = this.users.find(
+      (u) => (u.retailerId === retailerId || u.role === "RETAILER" || u.role === "RETAILER_STAFF") &&
+             u.quickPin === quickPin &&
+             u.status === "ACTIVE"
+    );
+    if (cashier) {
+      cashier.lastLoginAt = new Date().toISOString();
+      this.logAudit({
+        userId: cashier.id,
+        userName: cashier.name,
+        userRole: cashier.role,
+        action: "QUICK_PIN_LOGIN",
+        details: { staffTitle: cashier.staffTitle || "Counter Cashier" },
+        tenantType: "RETAILER",
+        tenantId: retailerId
+      });
+    }
+    return cashier || null;
+  }
+
+  getAuditLogs(filter?: { tenantType?: string; tenantId?: string; limit?: number }): DataStoreAuditLog[] {
+    let logs = [...this.auditLogs];
+    if (filter?.tenantType) {
+      logs = logs.filter((l) => l.tenantType === filter.tenantType);
+    }
+    if (filter?.tenantId) {
+      logs = logs.filter((l) => l.tenantId === filter.tenantId);
+    }
+    return logs.slice(0, filter?.limit || 100);
   }
 }
 

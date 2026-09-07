@@ -224,6 +224,48 @@ export class EvolutionService {
     ].filter(Boolean);
     await this.sendWhatsAppText(params.retailerPhone, lines.join("\n"));
   }
+
+  async sendStaffInviteNotification(params: {
+    phone: string;
+    staffName: string;
+    tenantName: string;
+    staffTitle: string;
+    loginId: string;
+    password: string;
+    quickPin?: string;
+    permissionsCount: number;
+    portalUrl?: string;
+  }): Promise<void> {
+    const portalUrl = params.portalUrl || "https://b2b.anagataitsolutions.in/login";
+    const lines = [
+      `🤝 *Team Invitation: ${params.tenantName}*`,
+      `Hello *${params.staffName}*, you have been added to the team workspace as *${params.staffTitle}*.`,
+      `\n🔐 *Your Login Access:*`,
+      `*Login ID / Mobile:* ${params.loginId}`,
+      `*Temporary Password:* ${params.password}`,
+      params.quickPin ? `*POS Counter Quick-PIN:* ${params.quickPin}` : ``,
+      `*Assigned Permissions:* ${params.permissionsCount} module privileges`,
+      `*Portal URL:* ${portalUrl}`,
+      `\n_Please log in and update your password upon initial sign in._`
+    ].filter(Boolean);
+    await this.sendWhatsAppText(params.phone, lines.join("\n"));
+  }
+
+  async sendPasswordResetOtp(params: {
+    phone: string;
+    userName: string;
+    otp: string;
+  }): Promise<void> {
+    const lines = [
+      `🔒 *Password Reset OTP Verification*`,
+      `Hello *${params.userName}*,`,
+      `\nYour one-time verification code is: *${params.otp}*`,
+      `\nThis code will expire in 10 minutes. Do not share this OTP with anyone.`,
+      `_Hyperlocal B2B Sales Aggregator Security Desk_`
+    ];
+    await this.sendWhatsAppText(params.phone, lines.join("\n"));
+  }
 }
 
 export const evolutionService = new EvolutionService();
+

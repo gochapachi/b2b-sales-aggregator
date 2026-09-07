@@ -89,22 +89,70 @@ async function startServer() {
     };
   });
 
-  // 2. Authentication
+  // 2. Authentication & User Management Ecosystem
+  const passwordResetOtps = new Map<string, { otp: string; expiresAt: number }>();
+
   server.post("/api/auth/login", async (req: FastifyRequest, reply: FastifyReply) => {
-    const { phone, password } = req.body as any;
-    const user = store.users.find((u) => u.phone === phone);
+    const { phone, loginId, identifier, username, password } = req.body as any;
+    const query = (phone || loginId || identifier || username || "").trim().toLowerCase();
+    
+    if (!query) {
+      return reply.status(400).send({ error: "Username, Login ID or Phone number is required" });
+    }
+
+    const cleanQueryDigits = query.replace(/[^0-9]/g, "");
+
+    const user = store.users.find((u) => {
+      if (u.id.toLowerCase() === query) return true;
+      if (u.loginId && u.loginId.toLowerCase() === query) return true;
+      if (u.phone.toLowerCase() === query) return true;
+      const uDigits = u.phone.replace(/[^0-9]/g, "");
+      if (cleanQueryDigits.length >= 10 && uDigits.length >= 10 && (uDigits.endsWith(cleanQueryDigits.slice(-10)) || cleanQueryDigits.endsWith(uDigits.slice(-10)))) {
+        return true;
+      }
+      return false;
+    });
+
     if (!user) {
       return reply.status(401).send({ error: "Invalid credentials or user not found" });
     }
 
-    const org = store.organizations.find((o) => o.ownerId === user.id);
-    const retailer = store.retailers.find((r) => r.userId === user.id);
+    if (user.status === "SUSPENDED") {
+      return reply.status(403).send({ error: "Account is suspended. Please contact your organization administrator." });
+    }
+
+    if (user.password && password) {
+      if (user.password !== password) {
+        return reply.status(401).send({ error: "Incorrect password provided" });
+      }
+    }
+
+    user.lastLoginAt = new Date().toISOString();
+
+    const org = user.organizationId 
+      ? store.organizations.find((o) => o.id === user.organizationId)
+      : store.organizations.find((o) => o.ownerId === user.id);
+
+    const retailer = user.retailerId
+      ? store.retailers.find((r) => r.id === user.retailerId)
+      : store.retailers.find((r) => r.userId === user.id);
 
     const token = server.jwt.sign({
       id: user.id,
       phone: user.phone,
+      loginId: user.loginId,
       role: user.role,
-      name: user.name
+      name: user.name,
+      organizationId: user.organizationId || (org ? org.id : undefined),
+      retailerId: user.retailerId || (retailer ? retailer.id : undefined)
+    });
+
+    store.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "USER_LOGIN_SUCCESS",
+      details: { loginIdentifier: query, role: user.role, staffTitle: user.staffTitle }
     });
 
     return {
@@ -112,9 +160,17 @@ async function startServer() {
       user: {
         id: user.id,
         phone: user.phone,
+        loginId: user.loginId,
         name: user.name,
         role: user.role,
-        status: user.status
+        status: user.status,
+        organizationId: user.organizationId || (org ? org.id : undefined),
+        retailerId: user.retailerId || (retailer ? retailer.id : undefined),
+        staffTitle: user.staffTitle,
+        permissions: user.permissions || [],
+        quickPinSet: !!user.quickPin,
+        mustChangePassword: user.mustChangePassword || false,
+        lastLoginAt: user.lastLoginAt
       },
       organization: org || null,
       retailerProfile: retailer || null
@@ -131,9 +187,11 @@ async function startServer() {
     const newUser = {
       id: `usr_${Date.now()}`,
       phone,
+      loginId: phone,
       name,
       role: role || "RETAILER",
       status: (role === "RETAILER" ? "PENDING_KYC" : "ACTIVE") as any,
+      permissions: [],
       createdAt: new Date().toISOString()
     };
     store.users.push(newUser);
@@ -146,6 +204,460 @@ async function startServer() {
     });
 
     return { token, user: newUser };
+  });
+
+  // Fast Cashier 4-Digit Quick-PIN Login
+  server.post("/api/auth/quick-pin", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId, quickPin } = req.body as any;
+    if (!retailerId || !quickPin) {
+      return reply.status(400).send({ error: "retailerId and quickPin (4 digits) are required" });
+    }
+
+    const user = store.quickPinLogin(retailerId, String(quickPin).trim());
+    if (!user) {
+      return reply.status(401).send({ error: "Invalid Quick-PIN for this store counter" });
+    }
+
+    const retailer = store.retailers.find((r) => r.id === retailerId || r.userId === user.id);
+
+    const token = server.jwt.sign({
+      id: user.id,
+      phone: user.phone,
+      loginId: user.loginId,
+      role: user.role,
+      name: user.name,
+      retailerId: retailer?.id || retailerId
+    });
+
+    return {
+      token,
+      user: {
+        id: user.id,
+        phone: user.phone,
+        loginId: user.loginId,
+        name: user.name,
+        role: user.role,
+        status: user.status,
+        retailerId: retailer?.id || retailerId,
+        staffTitle: user.staffTitle,
+        permissions: user.permissions || [],
+        quickPinSet: true,
+        lastLoginAt: user.lastLoginAt
+      },
+      retailerProfile: retailer || null
+    };
+  });
+
+  // WhatsApp OTP Password Reset Flow
+  server.post("/api/auth/forgot-password", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { identifier } = req.body as any;
+    const query = (identifier || "").trim().toLowerCase();
+    const cleanDigits = query.replace(/[^0-9]/g, "");
+
+    const user = store.users.find((u) => {
+      if (u.id.toLowerCase() === query) return true;
+      if (u.loginId && u.loginId.toLowerCase() === query) return true;
+      if (u.phone === query) return true;
+      if (cleanDigits.length === 10 && u.phone.replace(/[^0-9]/g, "").endsWith(cleanDigits)) return true;
+      return false;
+    });
+
+    if (!user) {
+      return reply.status(404).send({ error: "No account found matching this identifier" });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    passwordResetOtps.set(user.id, { otp, expiresAt: Date.now() + 10 * 60 * 1000 });
+
+    await evolutionService.sendPasswordResetOtp({
+      phone: user.phone,
+      userName: user.name,
+      otp
+    });
+
+    store.logAudit({
+      userId: user.id,
+      userName: user.name,
+      userRole: user.role,
+      action: "PASSWORD_RESET_REQUESTED",
+      details: { phone: user.phone }
+    });
+
+    return {
+      success: true,
+      message: `Verification OTP has been dispatched to WhatsApp number ${user.phone.slice(-4).padStart(10, "*")}`,
+      userId: user.id
+    };
+  });
+
+  server.post("/api/auth/reset-password", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { userId, identifier, otp, newPassword } = req.body as any;
+    
+    let targetUser = userId ? store.users.find((u) => u.id === userId) : null;
+    if (!targetUser && identifier) {
+      const query = (identifier || "").trim().toLowerCase();
+      targetUser = store.users.find((u) => u.loginId?.toLowerCase() === query || u.phone === query) || null;
+    }
+
+    if (!targetUser) {
+      return reply.status(404).send({ error: "User not found" });
+    }
+
+    const saved = passwordResetOtps.get(targetUser.id);
+    if (!saved || saved.otp !== String(otp).trim() || Date.now() > saved.expiresAt) {
+      return reply.status(400).send({ error: "Invalid or expired OTP code" });
+    }
+
+    if (!newPassword || newPassword.length < 6) {
+      return reply.status(400).send({ error: "New password must be at least 6 characters" });
+    }
+
+    targetUser.password = newPassword;
+    targetUser.mustChangePassword = false;
+    passwordResetOtps.delete(targetUser.id);
+
+    store.logAudit({
+      userId: targetUser.id,
+      userName: targetUser.name,
+      userRole: targetUser.role,
+      action: "PASSWORD_RESET_SUCCESS",
+      details: {}
+    });
+
+    return {
+      success: true,
+      message: "Password reset successfully. You can now login with your new password."
+    };
+  });
+
+  // Pre-configured Test Accounts Registry for fast 1-click test login
+  server.get("/api/auth/test-credentials", async () => {
+    return {
+      accounts: [
+        {
+          roleName: "Super Admin",
+          loginId: "superadmin",
+          phone: "9999999999",
+          password: "SuperAdmin@2026",
+          role: "SUPER_ADMIN",
+          description: "Full platform oversight, KYC review queues, dispatch SLA monitoring, and user registry"
+        },
+        {
+          roleName: "Wholesale Distributor Owner",
+          loginId: "seller_anagata",
+          phone: "9888888888",
+          password: "Seller@2026",
+          role: "SELLER_ADMIN",
+          description: "Anagata FMCG Distributors - Catalog, inventory batches, team management, and dispatch run-sheets"
+        },
+        {
+          roleName: "Distributor Picker & Dispatch",
+          loginId: "seller_picker",
+          phone: "9888888881",
+          password: "Picker@2026",
+          role: "SELLER_STAFF",
+          staffTitle: "Warehouse Dispatch Lead",
+          description: "Restricted role: Can pack batches, print shipping labels, and dispatch delivery run-sheets"
+        },
+        {
+          roleName: "Distributor Accountant",
+          loginId: "seller_accountant",
+          phone: "9888888882",
+          password: "Accounts@2026",
+          role: "SELLER_STAFF",
+          staffTitle: "Head Accountant",
+          description: "Restricted role: Manages ledgers, PDC cheques, GST credit notes, and Tally ERP sync"
+        },
+        {
+          roleName: "Wholesale Distributor 2",
+          loginId: "seller_awadh",
+          phone: "9777777777",
+          password: "Seller@2026",
+          role: "SELLER_ADMIN",
+          description: "Awadh Provisions & Grains - Secondary seller for fallback routing and competitive pricing"
+        },
+        {
+          roleName: "Field Sales Agent",
+          loginId: "agent_rahul",
+          phone: "9666666666",
+          password: "Agent@2026",
+          role: "SALES_AGENT",
+          description: "Rahul Sharma - Field beat visits, GPS check-ins, order booking, and store onboarding"
+        },
+        {
+          roleName: "Kirana Store Owner",
+          loginId: "ret_gupta",
+          phone: "9555555555",
+          password: "Kirana@2026",
+          role: "RETAILER",
+          description: "Gupta Kirana & General Store - Wholesale ordering, team management, and POS desk"
+        },
+        {
+          roleName: "Kirana Counter Cashier",
+          loginId: "ret_cashier",
+          phone: "9555555551",
+          password: "Cashier@2026",
+          quickPin: "1234",
+          role: "RETAILER_STAFF",
+          staffTitle: "Billing Counter Cashier",
+          description: "Fast 4-digit PIN login (1234), quick barcode billing, margins and purchase rates hidden"
+        },
+        {
+          roleName: "Kirana Store Helper / Inwarder",
+          loginId: "ret_helper",
+          phone: "9555555552",
+          password: "Helper@2026",
+          role: "RETAILER_STAFF",
+          staffTitle: "Store Inventory Inwarder",
+          description: "Restricted role: Stock inwarding, barcode scanning, POS catalog view"
+        }
+      ]
+    };
+  });
+
+  // Tenant Staff & Sub-User Management (Wholesalers & Retailers manage their own team)
+  server.get("/api/tenant/users", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { tenantType, tenantId } = req.query as any;
+    if (!tenantType || !tenantId) {
+      return reply.status(400).send({ error: "tenantType (SELLER | RETAILER) and tenantId are required" });
+    }
+    const users = store.getTenantUsers(tenantType as any, tenantId);
+    return {
+      tenantType,
+      tenantId,
+      count: users.length,
+      users: users.map((u) => ({
+        id: u.id,
+        name: u.name,
+        phone: u.phone,
+        loginId: u.loginId,
+        role: u.role,
+        staffTitle: u.staffTitle,
+        status: u.status,
+        permissions: u.permissions || [],
+        quickPinSet: !!u.quickPin,
+        lastLoginAt: u.lastLoginAt,
+        createdAt: u.createdAt
+      }))
+    };
+  });
+
+  server.post("/api/tenant/users", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { tenantType, tenantId, phone, name, role, staffTitle, permissions, quickPin, invitedByUserId } = body;
+
+    if (!tenantType || !tenantId || !phone || !name) {
+      return reply.status(400).send({ error: "tenantType, tenantId, phone, and name are required" });
+    }
+
+    const targetRole = role || (tenantType === "SELLER" ? "SELLER_STAFF" : "RETAILER_STAFF");
+
+    const result = store.createTenantUser(
+      tenantType,
+      tenantId,
+      {
+        phone,
+        name,
+        staffTitle: staffTitle || (tenantType === "SELLER" ? "Warehouse Staff" : "Counter Staff"),
+        permissions: permissions || [],
+        quickPin,
+        invitedByUserId
+      },
+      targetRole
+    );
+
+    // Get tenant name for WhatsApp invite
+    let tenantName = "Your Business Organization";
+    if (tenantType === "SELLER") {
+      const org = store.organizations.find((o) => o.id === tenantId);
+      if (org) tenantName = org.name;
+    } else {
+      const ret = store.retailers.find((r) => r.id === tenantId);
+      if (ret) tenantName = ret.shopName;
+    }
+
+    // Dispatch WhatsApp Invitation
+    await evolutionService.sendStaffInviteNotification({
+      phone,
+      staffName: name,
+      tenantName,
+      staffTitle: result.user.staffTitle || "Staff Member",
+      loginId: result.user.loginId || phone,
+      password: result.temporaryPassword,
+      quickPin,
+      permissionsCount: result.user.permissions?.length || 0
+    });
+
+    return {
+      success: true,
+      user: {
+        id: result.user.id,
+        name: result.user.name,
+        phone: result.user.phone,
+        loginId: result.user.loginId,
+        role: result.user.role,
+        staffTitle: result.user.staffTitle,
+        status: result.user.status,
+        permissions: result.user.permissions,
+        quickPin: result.user.quickPin,
+        createdAt: result.user.createdAt
+      },
+      temporaryPassword: result.temporaryPassword,
+      whatsappDispatched: true
+    };
+  });
+
+  server.put("/api/tenant/users/:id", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const body = req.body as any;
+    const updated = store.updateTenantUser(id, body);
+    if (!updated) {
+      return reply.status(404).send({ error: "User not found" });
+    }
+    return {
+      success: true,
+      user: {
+        id: updated.id,
+        name: updated.name,
+        phone: updated.phone,
+        loginId: updated.loginId,
+        role: updated.role,
+        staffTitle: updated.staffTitle,
+        status: updated.status,
+        permissions: updated.permissions,
+        quickPinSet: !!updated.quickPin
+      }
+    };
+  });
+
+  server.patch("/api/tenant/users/:id/status", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const { status } = req.body as any;
+    if (!status || (status !== "ACTIVE" && status !== "SUSPENDED")) {
+      return reply.status(400).send({ error: "Valid status ('ACTIVE' or 'SUSPENDED') is required" });
+    }
+    const success = store.setTenantUserStatus(id, status);
+    if (!success) {
+      return reply.status(404).send({ error: "User not found" });
+    }
+    return { success: true, userId: id, status };
+  });
+
+  // Admin User Directory, Impersonation & Audit Trail
+  server.get("/api/admin/users", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { role, status, search } = req.query as any;
+    let list = [...store.users];
+
+    if (role) {
+      list = list.filter((u) => u.role === role);
+    }
+    if (status) {
+      list = list.filter((u) => u.status === status);
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter((u) => 
+        u.name.toLowerCase().includes(q) || 
+        u.phone.includes(q) || 
+        (u.loginId && u.loginId.toLowerCase().includes(q))
+      );
+    }
+
+    return {
+      total: list.length,
+      users: list.map((u) => {
+        let tenantName = "";
+        if (u.organizationId) {
+          const org = store.organizations.find((o) => o.id === u.organizationId);
+          if (org) tenantName = org.name;
+        } else if (u.retailerId) {
+          const ret = store.retailers.find((r) => r.id === u.retailerId);
+          if (ret) tenantName = ret.shopName;
+        }
+        return {
+          id: u.id,
+          name: u.name,
+          phone: u.phone,
+          loginId: u.loginId,
+          role: u.role,
+          staffTitle: u.staffTitle,
+          status: u.status,
+          tenantName,
+          organizationId: u.organizationId,
+          retailerId: u.retailerId,
+          permissionsCount: u.permissions?.length || 0,
+          quickPinSet: !!u.quickPin,
+          lastLoginAt: u.lastLoginAt,
+          createdAt: u.createdAt
+        };
+      })
+    };
+  });
+
+  server.get("/api/admin/audit-logs", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { tenantType, tenantId, limit } = req.query as any;
+    const logs = store.getAuditLogs({
+      tenantType,
+      tenantId,
+      limit: limit ? parseInt(limit, 10) : 100
+    });
+    return {
+      count: logs.length,
+      auditLogs: logs
+    };
+  });
+
+  server.post("/api/admin/impersonate", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { targetUserId } = req.body as any;
+    const targetUser = store.users.find((u) => u.id === targetUserId);
+    if (!targetUser) {
+      return reply.status(404).send({ error: "Target user not found" });
+    }
+
+    const org = targetUser.organizationId 
+      ? store.organizations.find((o) => o.id === targetUser.organizationId)
+      : store.organizations.find((o) => o.ownerId === targetUser.id);
+
+    const retailer = targetUser.retailerId
+      ? store.retailers.find((r) => r.id === targetUser.retailerId)
+      : store.retailers.find((r) => r.userId === targetUser.id);
+
+    const token = server.jwt.sign({
+      id: targetUser.id,
+      phone: targetUser.phone,
+      loginId: targetUser.loginId,
+      role: targetUser.role,
+      name: targetUser.name,
+      isImpersonated: true,
+      impersonatedAt: new Date().toISOString()
+    });
+
+    store.logAudit({
+      userId: "usr_superadmin",
+      userName: "Super Admin",
+      userRole: "SUPER_ADMIN",
+      action: "SUPER_ADMIN_IMPERSONATION",
+      details: { targetUserId: targetUser.id, targetUserName: targetUser.name, targetRole: targetUser.role }
+    });
+
+    return {
+      token,
+      user: {
+        id: targetUser.id,
+        phone: targetUser.phone,
+        loginId: targetUser.loginId,
+        name: targetUser.name,
+        role: targetUser.role,
+        status: targetUser.status,
+        organizationId: targetUser.organizationId || (org ? org.id : undefined),
+        retailerId: targetUser.retailerId || (retailer ? retailer.id : undefined),
+        staffTitle: targetUser.staffTitle,
+        permissions: targetUser.permissions || [],
+        isImpersonated: true
+      },
+      organization: org || null,
+      retailerProfile: retailer || null
+    };
   });
 
   // 3. Udaan-Style Brand Store Discovery & Category Hierarchy

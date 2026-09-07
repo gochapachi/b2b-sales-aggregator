@@ -27,7 +27,9 @@ import {
   BookOpen,
   Trophy,
   FileSpreadsheet,
-  UserPlus
+  UserPlus,
+  Key,
+  Users
 } from "lucide-react";
 import SavingsCalculator from "../components/roi/SavingsCalculator";
 import KycVerificationModal from "../components/kyc/KycVerificationModal";
@@ -49,6 +51,9 @@ import SuperAdminAnalyticsDashboard from "../components/admin/SuperAdminAnalytic
 import PublicSignupModal from "../components/auth/PublicSignupModal";
 import AppUpdateBanner from "../components/common/AppUpdateBanner";
 import ErpUniversalColumnMapper from "../components/seller/ErpUniversalColumnMapper";
+import TenantUserManagementDesk from "../components/users/TenantUserManagementDesk";
+import TestAccountsQuickModal from "../components/auth/TestAccountsQuickModal";
+import SuperAdminUserRegistryDesk from "../components/admin/SuperAdminUserRegistryDesk";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
@@ -56,15 +61,36 @@ export default function Home() {
   const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("RETAILER");
   const [loading, setLoading] = useState(false);
 
-  // Self-Registration Modal
+  // Self-Registration Modal & Test Accounts Modal
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [isTestModalOpen, setIsTestModalOpen] = useState(false);
   const [signupInitialRole, setSignupInitialRole] = useState<"RETAILER" | "SELLER">("RETAILER");
+  const [currentAuthUser, setCurrentAuthUser] = useState<any | null>(null);
+  const [authToken, setAuthToken] = useState<string>("jwt_mock_token");
 
   // Sub-tabs for roles
-  const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "PACKING" | "LOGISTICS" | "ERP" | "ROI">("ORDERS");
-  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "POS_COUNTER" | "SMART_TOOLS">("CATALOG");
-  const [adminTab, setAdminTab] = useState<"ANALYTICS" | "KYC">("ANALYTICS");
+  const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "PACKING" | "LOGISTICS" | "ERP" | "ROI" | "STAFF">("ORDERS");
+  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "POS_COUNTER" | "SMART_TOOLS" | "STAFF">("CATALOG");
+  const [adminTab, setAdminTab] = useState<"ANALYTICS" | "KYC" | "USERS">("ANALYTICS");
   const [agentTab, setAgentTab] = useState<"CRM" | "LEADERBOARD_COACHING">("CRM");
+
+  const handleSwitchAccount = (data: any) => {
+    setAuthToken(data.token);
+    setCurrentAuthUser(data.user);
+    if (data.retailerProfile) {
+      setRetailerProfile(data.retailerProfile);
+    }
+    if (data.user.role === "SUPER_ADMIN") {
+      setActiveRole("ADMIN");
+      setAdminTab("USERS");
+    } else if (data.user.role === "SELLER_ADMIN" || data.user.role === "SELLER_STAFF") {
+      setActiveRole("SELLER");
+    } else if (data.user.role === "SALES_AGENT" || data.user.role === "SUPPLY_BD_AGENT") {
+      setActiveRole("AGENT");
+    } else {
+      setActiveRole("RETAILER");
+    }
+  };
 
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [selectedSubOrder, setSelectedSubOrder] = useState<any | null>(null);
@@ -275,6 +301,15 @@ export default function Home() {
               <span>Self-Register (Kirana / Seller)</span>
             </button>
 
+            {/* Demo Test Accounts & Quick Switch */}
+            <button
+              onClick={() => setIsTestModalOpen(true)}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition border border-indigo-500"
+            >
+              <Key className="w-3.5 h-3.5" />
+              <span>🔑 Test Accounts / Switch</span>
+            </button>
+
             {/* Role Switcher */}
             <div className="bg-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-semibold">
               <button
@@ -420,7 +455,27 @@ export default function Home() {
                 <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
                 Retailer Smart Tools (Voice AI, Udhar Khata, Margins)
               </button>
+              <button
+                onClick={() => setRetailerTab("STAFF")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  retailerTab === "STAFF"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                Counter Cashiers & Staff Team
+              </button>
             </div>
+
+            {retailerTab === "STAFF" && (
+              <TenantUserManagementDesk
+                apiBase={API_BASE}
+                tenantType="RETAILER"
+                tenantId="ret_gupta_kirana"
+                tenantName={retailerProfile?.shopName || "Gupta Kirana Store"}
+              />
+            )}
 
             {retailerTab === "POS_COUNTER" && (
               <RetailPosCheckoutDesk
@@ -877,7 +932,25 @@ export default function Home() {
               >
                 ROI & Savings Simulator
               </button>
+              <button
+                onClick={() => setSellerTab("STAFF")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  sellerTab === "STAFF" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                Team & Staff RBAC
+              </button>
             </div>
+
+            {sellerTab === "STAFF" && (
+              <TenantUserManagementDesk
+                apiBase={API_BASE}
+                tenantType="SELLER"
+                tenantId="org_anagata_fmcg"
+                tenantName="Anagata FMCG Wholesale"
+              />
+            )}
 
             {sellerTab === "PRODUCTS" && (
               <SellerProductStudio apiBase={API_BASE} organizationId="org_anagata_fmcg" />
@@ -1031,10 +1104,31 @@ export default function Home() {
                 <Shield className="w-3.5 h-3.5 text-indigo-600" />
                 Retailer KYC Verification Desk ({pendingRetailers.length})
               </button>
+              <button
+                onClick={() => setAdminTab("USERS")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  adminTab === "USERS"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Users className="w-3.5 h-3.5 text-indigo-600" />
+                User Registry & Audit Logs
+              </button>
             </div>
 
             {adminTab === "ANALYTICS" && (
               <SuperAdminAnalyticsDashboard apiBase={API_BASE} />
+            )}
+
+            {adminTab === "USERS" && (
+              <SuperAdminUserRegistryDesk
+                apiBase={API_BASE}
+                authToken={authToken}
+                onImpersonateSuccess={(data) => {
+                  handleSwitchAccount(data);
+                }}
+              />
             )}
 
             {adminTab === "KYC" && (
@@ -1138,6 +1232,13 @@ export default function Home() {
         onClose={() => setIsSignupModalOpen(false)}
         apiBase={API_BASE}
         initialRole={signupInitialRole}
+      />
+
+      <TestAccountsQuickModal
+        isOpen={isTestModalOpen}
+        onClose={() => setIsTestModalOpen(false)}
+        apiBase={API_BASE}
+        onSwitchAccount={handleSwitchAccount}
       />
     </div>
   );

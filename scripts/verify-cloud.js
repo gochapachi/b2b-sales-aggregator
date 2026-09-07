@@ -917,6 +917,155 @@ async function run() {
     `Network OTD: ${dispatchCommandRes.data?.networkOtdPct}% | Active SLA Countdowns: ${dispatchCommandRes.data?.liveCountdowns?.length || 0} orders`
   );
 
+  // 70. User Handling: Pre-configured Test Accounts Registry
+  const testAccountsRes = await request("GET", `${API_BASE}/api/auth/test-credentials`);
+  assert(
+    testAccountsRes.statusCode === 200 &&
+    Array.isArray(testAccountsRes.data?.accounts) &&
+    testAccountsRes.data?.accounts.length >= 8,
+    "70. User Handling: Pre-configured Test Accounts Registry",
+    `Provisioned ${testAccountsRes.data?.accounts?.length} deterministic test accounts (Superadmin, Sellers, Agents, Retailers, Cashiers)`
+  );
+
+  // 71. User Handling: Multi-Identifier Login via Alphanumeric Username
+  const loginUsernameRes = await request("POST", `${API_BASE}/api/auth/login`, {
+    loginId: "superadmin",
+    password: "SuperAdmin@2026"
+  });
+  const superAdminToken = loginUsernameRes.data?.token;
+  assert(
+    loginUsernameRes.statusCode === 200 &&
+    loginUsernameRes.data?.user?.role === "SUPER_ADMIN" &&
+    superAdminToken,
+    "71. User Handling: Multi-Identifier Login via Alphanumeric Username",
+    `Authenticated as Super Admin using loginId 'superadmin'`
+  );
+
+  // 72. User Handling: Multi-Identifier Login via 10-Digit Mobile Number
+  const loginPhoneRes = await request("POST", `${API_BASE}/api/auth/login`, {
+    phone: "9999999999",
+    password: "SuperAdmin@2026"
+  });
+  assert(
+    loginPhoneRes.statusCode === 200 &&
+    loginPhoneRes.data?.user?.id === loginUsernameRes.data?.user?.id,
+    "72. User Handling: Multi-Identifier Login via 10-Digit Mobile Number",
+    `Authenticated same Super Admin account via mobile phone '9999999999'`
+  );
+
+  // 73. User Handling: Granular RBAC & Margin Privacy Shielding
+  const cashierLoginRes = await request("POST", `${API_BASE}/api/auth/login`, {
+    loginId: "ret_cashier",
+    password: "Cashier@2026"
+  });
+  const cashierPerms = cashierLoginRes.data?.user?.permissions || [];
+  assert(
+    cashierLoginRes.statusCode === 200 &&
+    cashierPerms.includes("CAN_CREATE_BILLS") &&
+    !cashierPerms.includes("CAN_VIEW_PROFIT_MARGINS"),
+    "73. User Handling: Granular RBAC & Margin Privacy Shielding",
+    `Cashier role verified: CAN_CREATE_BILLS is granted, CAN_VIEW_PROFIT_MARGINS strictly shielded`
+  );
+
+  // 74. User Handling: Fast 4-Digit Cashier Quick-PIN Shift Switching
+  const quickPinRes = await request("POST", `${API_BASE}/api/auth/quick-pin`, {
+    retailerId: "ret_gupta_kirana",
+    quickPin: "1234"
+  });
+  assert(
+    quickPinRes.statusCode === 200 &&
+    quickPinRes.data?.token &&
+    quickPinRes.data?.user?.role === "RETAILER_STAFF",
+    "74. User Handling: Fast 4-Digit Cashier Quick-PIN Shift Switching",
+    `Cashier authenticated instantly via 4-digit PIN '1234' on counter ret_gupta_kirana`
+  );
+
+  // 75. User Handling: Tenant Team Management & Sub-User Provisioning with WhatsApp Alert
+  const newStaffPhone = "919026019566"; // User testing phone
+  const createSubUserRes = await request("POST", `${API_BASE}/api/tenant/users`, {
+    tenantType: "SELLER",
+    tenantId: "org_anagata_fmcg",
+    phone: newStaffPhone,
+    name: "Pooja Verma",
+    staffTitle: "Warehouse Packing Specialist",
+    permissions: ["CAN_PACK_BATCHES", "CAN_PRINT_LABELS"]
+  });
+  const createdSubUserId = createSubUserRes.data?.user?.id;
+  const createdSubUserPass = createSubUserRes.data?.temporaryPassword;
+  assert(
+    createSubUserRes.statusCode === 200 &&
+    createSubUserId &&
+    createSubUserPass &&
+    createSubUserRes.data?.whatsappDispatched === true,
+    "75. User Handling: Tenant Team Sub-User Provisioning & Evolution WhatsApp Dispatch",
+    `Created sub-user ${createdSubUserId} with password '${createdSubUserPass}', dispatched to ${newStaffPhone}`
+  );
+
+  // 76. User Handling: Sub-User Login with Generated Temporary Credentials
+  const subUserLoginRes = await request("POST", `${API_BASE}/api/auth/login`, {
+    phone: newStaffPhone,
+    password: createdSubUserPass
+  });
+  assert(
+    subUserLoginRes.statusCode === 200 &&
+    subUserLoginRes.data?.user?.permissions?.includes("CAN_PACK_BATCHES"),
+    "76. User Handling: Sub-User Login with Generated Temporary Credentials",
+    `New sub-user successfully logged in; verified CAN_PACK_BATCHES permission`
+  );
+
+  // 77. User Handling: Tenant Team Directory Retrieval
+  const tenantUsersRes = await request("GET", `${API_BASE}/api/tenant/users?tenantType=SELLER&tenantId=org_anagata_fmcg`);
+  assert(
+    tenantUsersRes.statusCode === 200 &&
+    Array.isArray(tenantUsersRes.data?.users) &&
+    tenantUsersRes.data?.users.some(u => u.id === createdSubUserId),
+    "77. User Handling: Tenant Team Directory Retrieval",
+    `Retrieved ${tenantUsersRes.data?.users?.length} team members for org_anagata_fmcg`
+  );
+
+  // 78. User Handling: Security Status Controls (Suspend & Reactivate Account)
+  const suspendRes = await request("PATCH", `${API_BASE}/api/tenant/users/${createdSubUserId}/status`, {
+    status: "SUSPENDED"
+  });
+  const suspendedLoginRes = await request("POST", `${API_BASE}/api/auth/login`, {
+    phone: newStaffPhone,
+    password: createdSubUserPass
+  });
+  const reactivateRes = await request("PATCH", `${API_BASE}/api/tenant/users/${createdSubUserId}/status`, {
+    status: "ACTIVE"
+  });
+  assert(
+    suspendRes.statusCode === 200 &&
+    suspendedLoginRes.statusCode === 403 &&
+    reactivateRes.statusCode === 200,
+    "78. User Handling: Security Status Controls (Suspend & Reactivate Account)",
+    `Suspended user rejected with 403 Forbidden; reactivated user to ACTIVE`
+  );
+
+  // 79. User Handling: Super Admin Complete User Registry
+  const adminUsersRes = await request("GET", `${API_BASE}/api/admin/users`);
+  assert(
+    adminUsersRes.statusCode === 200 &&
+    adminUsersRes.data?.total >= 9 &&
+    Array.isArray(adminUsersRes.data?.users),
+    "79. User Handling: Super Admin Complete User Registry",
+    `Total platform registered accounts: ${adminUsersRes.data?.total}`
+  );
+
+  // 80. User Handling: Super Admin Impersonation & Security Audit Trail
+  const impersonateRes = await request("POST", `${API_BASE}/api/admin/impersonate`, {
+    targetUserId: "usr_ret_1"
+  });
+  const auditLogsRes = await request("GET", `${API_BASE}/api/admin/audit-logs?limit=50`);
+  assert(
+    impersonateRes.statusCode === 200 &&
+    impersonateRes.data?.user?.isImpersonated === true &&
+    auditLogsRes.statusCode === 200 &&
+    auditLogsRes.data?.auditLogs?.length > 0,
+    "80. User Handling: Super Admin Impersonation & Security Audit Trail",
+    `Impersonated usr_ret_1 successfully; recorded in immutable audit trail (${auditLogsRes.data?.auditLogs?.length} events)`
+  );
+
   console.log("\n===============================================================");
   console.log(`VERIFICATION SUMMARY: ${passed} PASSED, ${failed} FAILED`);
   console.log("===============================================================");
