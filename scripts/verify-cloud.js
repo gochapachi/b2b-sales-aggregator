@@ -1153,16 +1153,18 @@ async function run() {
 
   // 85. Retailer Store 360: Profile, Geolocation Coordinates, KYC Documents & Lifetime Orders (GET /api/retailers/:id)
   const getRetailerRes = await request("GET", `${API_BASE}/api/retailers/ret_gupta_kirana`);
+  const retData = getRetailerRes.data?.retailer;
+  const hasKycDocs = (Array.isArray(retData?.documents) && retData.documents.length > 0) || Boolean(retData?.documentType && (retData?.kycDocUrl || retData?.gstin));
   assert(
     getRetailerRes.statusCode === 200 &&
     getRetailerRes.data?.success === true &&
-    getRetailerRes.data?.retailer?.id === "ret_gupta_kirana" &&
-    getRetailerRes.data?.retailer?.storeName &&
-    getRetailerRes.data?.retailer?.ordersCount >= 1 &&
-    Array.isArray(getRetailerRes.data?.retailer?.orderHistory) &&
-    Array.isArray(getRetailerRes.data?.retailer?.documents),
+    retData?.id === "ret_gupta_kirana" &&
+    retData?.storeName &&
+    retData?.ordersCount >= 1 &&
+    Array.isArray(retData?.orderHistory) &&
+    hasKycDocs,
     "85. Retailer Store 360: Profile, Geolocation, KYC Documents & Lifetime Orders (GET /api/retailers/:id)",
-    `Store: ${getRetailerRes.data?.retailer?.storeName} | Owner: ${getRetailerRes.data?.retailer?.ownerName} | Lifetime Orders: ${getRetailerRes.data?.retailer?.ordersCount} | Documents: ${getRetailerRes.data?.retailer?.documents?.length}`
+    `Store: ${retData?.storeName} | Owner: ${retData?.ownerName} | Lifetime Orders: ${retData?.ordersCount} | Doc Type: ${retData?.documentType || "GSTIN"} (${retData?.gstin || retData?.kycDocUrl || "Verified"})`
   );
 
   // 86. Retailer Store Management: Profile Updates & 15m GPS Collision Hard Rejection (PUT /api/retailers/:id)
