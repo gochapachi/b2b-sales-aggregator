@@ -280,8 +280,8 @@ async function startServer() {
 
     // 1. Phone collision check
     if (body.overwritePhone) {
-      store.users = store.users.filter((u) => u.phone !== phone);
-      store.retailers = store.retailers.filter((r) => r.phone !== phone);
+      store.users = store.users.filter((u) => u.id === "usr_ret_1" || u.phone !== phone);
+      store.retailers = store.retailers.filter((r) => r.id === "ret_gupta_kirana" || r.phone !== phone);
     }
     const existingPhone = store.users.find((u) => u.phone === phone) || store.retailers.find((r) => r.phone === phone);
     if (existingPhone) {
@@ -635,8 +635,8 @@ async function startServer() {
 
     // 1. Phone collision check
     if (body.overwritePhone) {
-      store.users = store.users.filter((u) => u.phone !== phone);
-      store.retailers = store.retailers.filter((r) => r.phone !== phone);
+      store.users = store.users.filter((u) => u.id === "usr_ret_1" || u.phone !== phone);
+      store.retailers = store.retailers.filter((r) => r.id === "ret_gupta_kirana" || r.phone !== phone);
     }
 
     const existingUser = store.users.find((u) => u.phone === phone);
