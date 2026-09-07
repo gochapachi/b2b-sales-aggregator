@@ -18,15 +18,41 @@ export class EvolutionService {
   }
 
   private cleanPhoneNumber(phone: string): string {
-    const cleaned = phone.replace(/[^0-9]/g, "");
+    const cleaned = (phone || "").replace(/[^0-9]/g, "");
     if (cleaned.length === 10) {
       return "91" + cleaned;
     }
     return cleaned;
   }
 
+  private isNumberAllowed(targetNumber: string): boolean {
+    const rawDigits = (targetNumber || "").replace(/[^0-9]/g, "");
+    const last10 = rawDigits.slice(-10);
+    const with91 = "91" + last10;
+
+    const allowed = new Set<string>(CONFIG.ALLOWED_WHATSAPP_NUMBERS || []);
+    // Hardcoded absolute safety baseline: strictly user-authorized test numbers
+    allowed.add("919026019566");
+    allowed.add("917705871046");
+    allowed.add("9026019566");
+    allowed.add("7705871046");
+
+    return allowed.has(rawDigits) || allowed.has(with91) || allowed.has(last10);
+  }
+
   async sendWhatsAppText(phone: string, message: string): Promise<EvolutionSendTextResponse> {
     const targetNumber = this.cleanPhoneNumber(phone);
+
+    // CRITICAL SAFETY SHIELD: Never dispatch real WhatsApp messages to random or unverified numbers
+    if (!this.isNumberAllowed(targetNumber)) {
+      console.log(`[Evolution API Safety Guard] 🛡️ BLOCKED outbound WhatsApp dispatch to non-whitelisted number: ${targetNumber}`);
+      console.log(`Live messages are restricted strictly to authorized test numbers: [919026019566, 917705871046].`);
+      return {
+        success: true,
+        messageId: `guarded_simulation_${Date.now()}`
+      };
+    }
+
     const endpoint = `${this.baseUrl}/message/sendText/${this.instanceName}`;
 
     console.log(`[Evolution API] Sending WhatsApp alert to ${targetNumber} via ${this.baseUrl}:`);

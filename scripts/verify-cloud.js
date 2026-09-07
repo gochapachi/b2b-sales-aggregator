@@ -716,7 +716,7 @@ async function run() {
 
   // 54. R2: 15-Meter Geofence Uniqueness & Hard Store Collision Rejection
   // Seeded store 'ret_gupta_kirana' is at (26.846700, 80.946200). Testing at 26.846750 (~5.5m away)
-  const collidingPhone = `95${Math.floor(10000000 + Math.random() * 90000000)}`;
+  const collidingPhone = TEST_PHONE_1;
   const collisionRes = await request("POST", `${API_BASE}/api/onboarding`, {
     agentId: "usr_agent_2",
     storeName: "Gupta Kirana Duplicate Branch",
@@ -981,7 +981,7 @@ async function run() {
   );
 
   // 75. User Handling: Tenant Team Management & Sub-User Provisioning with WhatsApp Alert
-  const newStaffPhone = `919026019${Math.floor(100 + Math.random() * 900)}`;
+  const newStaffPhone = TEST_PHONE_1;
   const createSubUserRes = await request("POST", `${API_BASE}/api/tenant/users`, {
     tenantType: "SELLER",
     tenantId: "org_anagata_fmcg",

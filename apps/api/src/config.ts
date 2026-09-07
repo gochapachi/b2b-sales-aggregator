@@ -20,5 +20,9 @@ export const CONFIG = {
   MINIO_ACCESS_KEY: process.env.MINIO_ACCESS_KEY || "minio_admin",
   MINIO_SECRET_KEY: process.env.MINIO_SECRET_KEY || "minio_secret_2026",
   MINIO_BUCKET_DOCS: process.env.MINIO_BUCKET_DOCS || "b2b-kyc-documents",
-  MINIO_BUCKET_PHOTOS: process.env.MINIO_BUCKET_PHOTOS || "b2b-shop-photos"
+  MINIO_BUCKET_PHOTOS: process.env.MINIO_BUCKET_PHOTOS || "b2b-shop-photos",
+  ALLOWED_WHATSAPP_NUMBERS: (process.env.ALLOWED_WHATSAPP_NUMBERS || "919026019566,917705871046,9026019566,7705871046")
+    .split(",")
+    .map((n) => n.trim().replace(/[^0-9]/g, ""))
+    .filter(Boolean)
 };

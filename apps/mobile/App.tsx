@@ -105,88 +105,83 @@ export default function App() {
 
       {/* App Header & Persona Switcher */}
       <View style={styles.topHeader}>
-        <View>
-          <Text style={styles.appTitle}>B2B Sales Aggregator</Text>
-          <Text style={styles.appSubtitle}>v{CURRENT_VERSION} • Production Build</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.appTitle}>
+            {role === "POS" || role === "RETAILER" ? "Gupta Kirana Store" : role === "SELLER" ? "Anagata FMCG Wholesale" : role === "AGENT" ? "Rahul Sharma (Agent)" : "Super Admin Command HQ"}
+          </Text>
+          <Text style={styles.appSubtitle}>
+            Active Persona: {role} • v{CURRENT_VERSION}
+          </Text>
         </View>
 
         <TouchableOpacity
           style={styles.btnTestAccounts}
           onPress={() => setShowAccountsModal(true)}
         >
-          <Text style={styles.btnTestAccountsText}>👥 Demo Users</Text>
+          <Text style={styles.btnTestAccountsText}>🔄 Switch User</Text>
         </TouchableOpacity>
       </View>
 
-      {/* Role Navigation Bar */}
+      {/* Role-Scoped Navigation Bar */}
       <View style={styles.roleBar}>
-        <TouchableOpacity
-          style={[styles.roleTab, role === "SUPER_ADMIN" && styles.roleTabActive]}
-          onPress={() => setRole("SUPER_ADMIN")}
-        >
-          <Text style={[styles.roleText, role === "SUPER_ADMIN" && styles.roleTextActive]}>
-            🛡️ HQ
-          </Text>
-        </TouchableOpacity>
+        {(role === "POS" || role === "RETAILER") && (
+          <>
+            <TouchableOpacity
+              style={[styles.roleTab, role === "POS" && styles.roleTabActive]}
+              onPress={() => setRole("POS")}
+            >
+              <Text style={[styles.roleText, role === "POS" && styles.roleTextActive]}>
+                ⚡ Counter POS
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.roleTab, role === "RETAILER" && styles.roleTabActive]}
+              onPress={() => setRole("RETAILER")}
+            >
+              <Text style={[styles.roleText, role === "RETAILER" && styles.roleTextActive]}>
+                🛒 Kirana Storefront
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-        <TouchableOpacity
-          style={[styles.roleTab, role === "AGENT" && styles.roleTabActive]}
-          onPress={() => setRole("AGENT")}
-        >
-          <Text style={[styles.roleText, role === "AGENT" && styles.roleTextActive]}>
-            📍 Beat
-          </Text>
-        </TouchableOpacity>
+        {role === "SELLER" && (
+          <>
+            <TouchableOpacity
+              style={[styles.roleTab, sellerSubTab === "ORDERS" && styles.roleTabActive]}
+              onPress={() => setSellerSubTab("ORDERS")}
+            >
+              <Text style={[styles.roleText, sellerSubTab === "ORDERS" && styles.roleTextActive]}>
+                📦 Orders & Dispatch
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.roleTab, sellerSubTab === "TEAM" && styles.roleTabActive]}
+              onPress={() => setSellerSubTab("TEAM")}
+            >
+              <Text style={[styles.roleText, sellerSubTab === "TEAM" && styles.roleTextActive]}>
+                👥 Team & Margins
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
 
-        <TouchableOpacity
-          style={[styles.roleTab, role === "SELLER" && styles.roleTabActive]}
-          onPress={() => setRole("SELLER")}
-        >
-          <Text style={[styles.roleText, role === "SELLER" && styles.roleTextActive]}>
-            🏢 Seller
-          </Text>
-        </TouchableOpacity>
+        {role === "AGENT" && (
+          <TouchableOpacity style={[styles.roleTab, styles.roleTabActive]}>
+            <Text style={[styles.roleText, styles.roleTextActive]}>
+              📍 Beat Route & GPS Check-in
+            </Text>
+          </TouchableOpacity>
+        )}
 
-        <TouchableOpacity
-          style={[styles.roleTab, role === "RETAILER" && styles.roleTabActive]}
-          onPress={() => setRole("RETAILER")}
-        >
-          <Text style={[styles.roleText, role === "RETAILER" && styles.roleTextActive]}>
-            🛒 Retail
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.roleTab, role === "POS" && styles.roleTabActive]}
-          onPress={() => setRole("POS")}
-        >
-          <Text style={[styles.roleText, role === "POS" && styles.roleTabActive]}>
-            ⚡ POS
-          </Text>
-        </TouchableOpacity>
+        {role === "SUPER_ADMIN" && (
+          <TouchableOpacity style={[styles.roleTab, styles.roleTabActive]}>
+            <Text style={[styles.roleText, styles.roleTextActive]}>
+              🛡️ Operations HQ & KYC Queue
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
-
-      {/* Seller Sub-tabs if on Seller */}
-      {role === "SELLER" && (
-        <View style={styles.sellerSubBar}>
-          <TouchableOpacity
-            style={[styles.subTab, sellerSubTab === "ORDERS" && styles.subTabActive]}
-            onPress={() => setSellerSubTab("ORDERS")}
-          >
-            <Text style={[styles.subTabText, sellerSubTab === "ORDERS" && styles.subTabTextActive]}>
-              📦 Orders & Dispatch
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.subTab, sellerSubTab === "TEAM" && styles.subTabActive]}
-            onPress={() => setSellerSubTab("TEAM")}
-          >
-            <Text style={[styles.subTabText, sellerSubTab === "TEAM" && styles.subTabTextActive]}>
-              👥 Team & Margins
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
 
       {/* Screen Render */}
       <View style={{ flex: 1 }}>

@@ -54,12 +54,16 @@ import ErpUniversalColumnMapper from "../components/seller/ErpUniversalColumnMap
 import TenantUserManagementDesk from "../components/users/TenantUserManagementDesk";
 import TestAccountsQuickModal from "../components/auth/TestAccountsQuickModal";
 import SuperAdminUserRegistryDesk from "../components/admin/SuperAdminUserRegistryDesk";
+import AuthGateway from "../components/auth/AuthGateway";
+import AppShell from "../components/layout/AppShell";
+import AccessDeniedView from "../components/common/AccessDeniedView";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
 export default function Home() {
   const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("RETAILER");
   const [loading, setLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Self-Registration Modal & Test Accounts Modal
   const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
@@ -74,22 +78,79 @@ export default function Home() {
   const [adminTab, setAdminTab] = useState<"ANALYTICS" | "KYC" | "USERS">("ANALYTICS");
   const [agentTab, setAgentTab] = useState<"CRM" | "LEADERBOARD_COACHING">("CRM");
 
-  const handleSwitchAccount = (data: any) => {
+  // Restore authenticated session from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("b2b_session");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.user) {
+          handleSwitchAccount(parsed, false);
+        }
+      }
+    } catch (e) {
+      console.warn("Could not parse saved session", e);
+    }
+  }, []);
+
+  const handleSignOut = () => {
+    setCurrentAuthUser(null);
+    setAuthToken("");
+    try {
+      localStorage.removeItem("b2b_session");
+    } catch (e) {}
+  };
+
+  const handleSwitchAccount = (data: any, persist: boolean = true) => {
     setAuthToken(data.token);
     setCurrentAuthUser(data.user);
+    if (persist) {
+      try {
+        localStorage.setItem("b2b_session", JSON.stringify(data));
+      } catch (e) {}
+    }
+
     if (data.retailerProfile) {
       setRetailerProfile(data.retailerProfile);
     }
     if (data.user.role === "SUPER_ADMIN") {
       setActiveRole("ADMIN");
-      setAdminTab("USERS");
+      setAdminTab("ANALYTICS");
     } else if (data.user.role === "SELLER_ADMIN" || data.user.role === "SELLER_STAFF") {
       setActiveRole("SELLER");
+      setSellerTab("ORDERS");
     } else if (data.user.role === "SALES_AGENT" || data.user.role === "SUPPLY_BD_AGENT") {
       setActiveRole("AGENT");
+      setAgentTab("CRM");
     } else {
       setActiveRole("RETAILER");
+      setRetailerTab("CATALOG");
     }
+  };
+
+  // Strict Role-Based Access Control
+  const isRoleAuthorized = (role: string, userRole: string): boolean => {
+    if (!userRole) return false;
+    if (userRole === "SUPER_ADMIN") return true;
+    if (role === "SELLER" && (userRole === "SELLER_ADMIN" || userRole === "SELLER_STAFF")) return true;
+    if (role === "RETAILER" && (userRole === "RETAILER_ADMIN" || userRole === "RETAILER_STAFF" || userRole === "RETAILER")) return true;
+    if (role === "AGENT" && (userRole === "SALES_AGENT" || userRole === "SUPPLY_BD_AGENT")) return true;
+    return false;
+  };
+
+  const getCurrentTab = () => {
+    if (activeRole === "RETAILER") return retailerTab;
+    if (activeRole === "SELLER") return sellerTab;
+    if (activeRole === "AGENT") return agentTab;
+    if (activeRole === "ADMIN") return adminTab;
+    return "";
+  };
+
+  const handleSelectTab = (tabId: string) => {
+    if (activeRole === "RETAILER") setRetailerTab(tabId as any);
+    if (activeRole === "SELLER") setSellerTab(tabId as any);
+    if (activeRole === "AGENT") setAgentTab(tabId as any);
+    if (activeRole === "ADMIN") setAdminTab(tabId as any);
   };
 
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
@@ -132,12 +193,14 @@ export default function Home() {
     setLoading(true);
     try {
       if (activeRole === "SELLER") {
-        const res = await fetch(`${API_BASE}/api/orders?role=SELLER_ADMIN&organizationId=org_anagata_fmcg`).then(r => r.json());
+        const orgId = currentAuthUser?.tenantId || currentAuthUser?.organization?.id || currentAuthUser?.organizationId || "org_anagata_fmcg";
+        const res = await fetch(`${API_BASE}/api/orders?role=SELLER_ADMIN&organizationId=${orgId}`).then(r => r.json());
         setSellerOrders(res.subOrders || []);
       } else if (activeRole === "ADMIN") {
         const res = await fetch(`${API_BASE}/api/kyc/pending`).then(r => r.json());
         setPendingRetailers(res.pendingRetailers || []);
       } else if (activeRole === "RETAILER") {
+        const retId = currentAuthUser?.tenantId || currentAuthUser?.retailerProfile?.id || "ret_gupta_kirana";
         // Fetch brands
         const bRes = await fetch(`${API_BASE}/api/catalog/brands`).then(r => r.json());
         setBrands(bRes.brands || []);
@@ -147,7 +210,7 @@ export default function Home() {
         setCategories(cRes.categories || []);
 
         // Fetch catalog with filters
-        let url = `${API_BASE}/api/catalog?role=RETAILER&retailerId=ret_gupta_kirana`;
+        let url = `${API_BASE}/api/catalog?role=RETAILER&retailerId=${retId}`;
         if (selectedBrand !== "ALL") url += `&brand=${encodeURIComponent(selectedBrand)}`;
         if (selectedCategory !== "ALL") url += `&category=${encodeURIComponent(selectedCategory)}`;
 
@@ -156,11 +219,11 @@ export default function Home() {
         setIsPriceUnlocked(cat.isPriceUnlocked);
 
         // Fetch retailer orders
-        const ords = await fetch(`${API_BASE}/api/orders?role=RETAILER&retailerId=ret_gupta_kirana`).then(r => r.json());
+        const ords = await fetch(`${API_BASE}/api/orders?role=RETAILER&retailerId=${retId}`).then(r => r.json());
         setRetailerOrders(ords.orders || []);
 
         // Fetch retailer profile
-        const prof = await fetch(`${API_BASE}/api/crm/retailer/ret_gupta_kirana`).then(r => r.json());
+        const prof = await fetch(`${API_BASE}/api/crm/retailer/${retId}`).then(r => r.json());
         if (prof.retailer) setRetailerProfile(prof.retailer);
       }
     } catch (e) {
@@ -261,108 +324,78 @@ export default function Home() {
     }
   };
 
+  if (!currentAuthUser) {
+    return (
+      <div className="min-h-screen bg-slate-950 font-sans">
+        <AppUpdateBanner apiBase={API_BASE} />
+        <AuthGateway
+          apiBase={API_BASE}
+          onLoginSuccess={handleSwitchAccount}
+          onOpenSignup={(role) => {
+            setSignupInitialRole(role);
+            setIsSignupModalOpen(true);
+          }}
+        />
+        <PublicSignupModal
+          isOpen={isSignupModalOpen}
+          onClose={() => setIsSignupModalOpen(false)}
+          apiBase={API_BASE}
+          initialRole={signupInitialRole}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
-      {/* In-App Automatic Update Banner */}
       <AppUpdateBanner apiBase={API_BASE} />
 
-      {/* Top Header */}
-      <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-indigo-500 to-emerald-400 flex items-center justify-center font-black text-white text-lg shadow-md">
-              B
-            </div>
-            <div>
-              <h1 className="text-base font-bold leading-tight flex items-center gap-2">
-                Hyperlocal B2B Sales Aggregator
-                <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                  Udaan B2B + SFA CRM
-                </span>
-              </h1>
-              <div className="text-xs text-slate-400 flex items-center gap-2">
-                <span>Coolify Ubuntu 24.04</span>
-                <span>•</span>
-                <span className="text-emerald-400 font-medium">Evolution API WhatsApp Active</span>
-              </div>
-            </div>
+      {/* Super Admin Inspection Mode Warning */}
+      {currentAuthUser.role === "SUPER_ADMIN" && activeRole !== "ADMIN" && (
+        <div className="bg-indigo-950 text-indigo-200 px-4 py-2 text-xs flex items-center justify-between border-b border-indigo-800 sticky top-0 z-50">
+          <div className="flex items-center gap-2">
+            <Shield className="w-4 h-4 text-amber-400" />
+            <span>
+              <strong>Super Admin View-As Audit:</strong> Currently previewing the <strong>{activeRole}</strong> workspace.
+            </span>
           </div>
-
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Self-Service Registration Button */}
-            <button
-              onClick={() => {
-                setSignupInitialRole("RETAILER");
-                setIsSignupModalOpen(true);
-              }}
-              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition border border-emerald-500"
-            >
-              <UserPlus className="w-3.5 h-3.5" />
-              <span>Self-Register (Kirana / Seller)</span>
-            </button>
-
-            {/* Demo Test Accounts & Quick Switch */}
-            <button
-              onClick={() => setIsTestModalOpen(true)}
-              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition border border-indigo-500"
-            >
-              <Key className="w-3.5 h-3.5" />
-              <span>🔑 Test Accounts / Switch</span>
-            </button>
-
-            {/* Role Switcher */}
-            <div className="bg-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-semibold">
-              <button
-                onClick={() => setActiveRole("RETAILER")}
-                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                  activeRole === "RETAILER"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-300 hover:text-white"
-                }`}
-              >
-                <ShoppingBag className="w-3.5 h-3.5" />
-                Kirana Retail POS & B2B
-              </button>
-              <button
-                onClick={() => setActiveRole("AGENT")}
-                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                  activeRole === "AGENT"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-300 hover:text-white"
-                }`}
-              >
-                <MapPin className="w-3.5 h-3.5" />
-                Field Agent CRM
-              </button>
-              <button
-                onClick={() => setActiveRole("SELLER")}
-                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                  activeRole === "SELLER"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-300 hover:text-white"
-                }`}
-              >
-                <Building2 className="w-3.5 h-3.5" />
-                Wholesaler / Brand
-              </button>
-              <button
-                onClick={() => setActiveRole("ADMIN")}
-                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                  activeRole === "ADMIN"
-                    ? "bg-indigo-600 text-white shadow-sm"
-                    : "text-slate-300 hover:text-white"
-                }`}
-              >
-                <Shield className="w-3.5 h-3.5" />
-                Super Admin HQ
-              </button>
-            </div>
-          </div>
+          <button
+            onClick={() => setActiveRole("ADMIN")}
+            className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-[11px] transition shadow-sm"
+          >
+            Return to Super Admin HQ
+          </button>
         </div>
-      </header>
+      )}
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
+      <AppShell
+        currentUser={currentAuthUser}
+        activeRole={activeRole}
+        activeTab={getCurrentTab()}
+        onSelectTab={handleSelectTab}
+        onSignOut={handleSignOut}
+        onOpenTestAccounts={() => setIsTestModalOpen(true)}
+        onOpenSignup={() => {
+          setSignupInitialRole("RETAILER");
+          setIsSignupModalOpen(true);
+        }}
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+      >
+        {!isRoleAuthorized(activeRole, currentAuthUser.role) ? (
+          <AccessDeniedView
+            userRole={currentAuthUser.role}
+            attemptedRole={activeRole}
+            onReturnToDashboard={() => {
+              if (currentAuthUser.role.startsWith("SELLER")) setActiveRole("SELLER");
+              else if (currentAuthUser.role.startsWith("RETAILER")) setActiveRole("RETAILER");
+              else if (currentAuthUser.role.includes("AGENT")) setActiveRole("AGENT");
+              else setActiveRole("ADMIN");
+            }}
+            onSignOut={handleSignOut}
+          />
+        ) : (
+          <div className="space-y-6">
         {/* ================= 1. RETAILER UDAAN B2B STORE VIEW ================= */}
         {activeRole === "RETAILER" && (
           <div className="space-y-6">
@@ -1169,25 +1202,27 @@ export default function Home() {
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => {
-                          setSelectedKycRetailer(ret);
-                          setIsKycModalOpen(true);
-                        }}
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition self-start sm:self-center"
-                      >
-                        <FileText className="w-3.5 h-3.5" />
-                        Inspect & Verify
-                      </button>
-                    </div>
-                  ))
-                )}
+                        <button
+                          onClick={() => {
+                            setSelectedKycRetailer(ret);
+                            setIsKycModalOpen(true);
+                          }}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm flex items-center gap-1.5 transition self-start sm:self-center"
+                        >
+                          <FileText className="w-3.5 h-3.5" />
+                          Inspect & Verify
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
-            </div>
             )}
           </div>
         )}
-      </main>
+      </div>
+    )}
+  </AppShell>
 
       {/* Modals */}
       <KycVerificationModal
