@@ -216,10 +216,12 @@ async function startServer() {
     return { token, user: newUser };
   });
 
-  // Fast Cashier 4-Digit Quick-PIN Login
-  server.post("/api/auth/quick-pin", async (req: FastifyRequest, reply: FastifyReply) => {
-    const { retailerId, quickPin } = req.body as any;
-    if (!retailerId || !quickPin) {
+  // Fast Cashier 4-Digit Quick-PIN Login (supports both /api/auth/quick-pin and /api/auth/cashier-pin-login)
+  const handleQuickPinLogin = async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = (req.body || {}) as any;
+    const retailerId = body.retailerId || "ret_gupta_kirana";
+    const quickPin = body.quickPin || body.pin;
+    if (!quickPin) {
       return reply.status(400).send({ error: "retailerId and quickPin (4 digits) are required" });
     }
 
@@ -256,7 +258,10 @@ async function startServer() {
       },
       retailerProfile: retailer || null
     };
-  });
+  };
+
+  server.post("/api/auth/quick-pin", handleQuickPinLogin);
+  server.post("/api/auth/cashier-pin-login", handleQuickPinLogin);
 
   // WhatsApp OTP Password Reset Flow
   server.post("/api/auth/forgot-password", async (req: FastifyRequest, reply: FastifyReply) => {
