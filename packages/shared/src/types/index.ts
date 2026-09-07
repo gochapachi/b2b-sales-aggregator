@@ -14,7 +14,15 @@ import {
   LedgerEntryType,
   VisitPurpose,
   PaymentMode,
-  FmcgCategory
+  FmcgCategory,
+  StaffRole,
+  BatchStatus,
+  TradeSchemeType,
+  LoyaltyTier,
+  PdcStatus,
+  KhataEntryType,
+  ReturnReason,
+  AuditAction
 } from '../constants';
 
 export interface User {
@@ -499,6 +507,251 @@ export interface EWayBillNicPayload {
     approxDistanceKm: number;
   };
   formattedCopyText: string;
+}
+
+export interface ProductBatchRecord {
+  id: string;
+  skuId: string;
+  skuCode: string;
+  productName: string;
+  batchNumber: string;
+  mfgDate: string; // YYYY-MM-DD
+  expiryDate: string; // YYYY-MM-DD
+  daysToExpiry: number;
+  quantityInitial: number;
+  quantityAvailable: number;
+  godownLocation: string;
+  binLocation?: string;
+  costPrice: number;
+  status: BatchStatus;
+  nearExpiryDiscountPct?: number;
+}
+
+export interface GoodsReceiptNote {
+  id: string;
+  grnNumber: string;
+  poNumber: string;
+  vendorName: string;
+  receivedDate: string;
+  itemsReceived: Array<{
+    skuId: string;
+    productName: string;
+    batchNumber: string;
+    quantityOrdered: number;
+    quantityReceived: number;
+    unitCost: number;
+    expiryDate: string;
+  }>;
+  totalInvoiceAmount: number;
+  notes?: string;
+  verifiedBy: string;
+}
+
+export interface CreditNoteGst {
+  id: string;
+  creditNoteNumber: string; // e.g. CN-2026-001
+  originalInvoiceNumber: string;
+  originalInvoiceDate: string;
+  retailerId: string;
+  retailerShopName: string;
+  retailerGstin?: string;
+  organizationId: string;
+  organizationName: string;
+  reason: ReturnReason;
+  items: Array<{
+    skuId: string;
+    productName: string;
+    hsnCode: string;
+    quantity: number;
+    ratePerUnit: number;
+    taxableValue: number;
+    gstRatePct: number;
+    taxAmount: number;
+    totalAmount: number;
+  }>;
+  totalTaxableValue: number;
+  totalTaxAmount: number;
+  grandTotal: number;
+  status: 'ISSUED' | 'ADJUSTED_IN_LEDGER';
+  createdAt: string;
+}
+
+export interface TradeSchemeRule {
+  id: string;
+  organizationId: string;
+  name: string;
+  schemeType: TradeSchemeType;
+  description: string;
+  targetSkuId?: string;
+  targetSkuName?: string;
+  minQuantityTrigger?: number;
+  freeSkuId?: string;
+  freeSkuName?: string;
+  freeQuantity?: number;
+  discountPct?: number;
+  activeStartTime?: string; // e.g. "06:00"
+  activeEndTime?: string; // e.g. "09:00"
+  minCartValue?: number;
+  isActive: boolean;
+  validUntil: string;
+}
+
+export interface LoyaltyAccount {
+  retailerId: string;
+  retailerShopName: string;
+  currentPoints: number;
+  lifetimePointsEarned: number;
+  tier: LoyaltyTier;
+  pointsMultiplier: number;
+  rupeeValuePerPoint: number;
+}
+
+export interface PdcChequeRecord {
+  id: string;
+  chequeNumber: string;
+  bankName: string;
+  branchName?: string;
+  retailerId: string;
+  retailerShopName: string;
+  organizationId: string;
+  amount: number;
+  chequeDate: string; // maturity date
+  status: PdcStatus;
+  receivedByAgentId?: string;
+  receivedByAgentName?: string;
+  depositedDate?: string;
+  clearedDate?: string;
+  bounceReason?: string;
+  bouncePenaltyAmount?: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface DeliveryRunStop {
+  stopIndex: number;
+  subOrderId: string;
+  retailerId: string;
+  shopName: string;
+  address: string;
+  phone: string;
+  cartonCount: number;
+  grossWeightKg: number;
+  totalAmount: number;
+  paymentTerm: string;
+  deliveryOtp: string;
+  status: 'PENDING' | 'DELIVERED' | 'FAILED_RETRY';
+}
+
+export interface DeliveryRunSheet {
+  id: string;
+  runSheetNumber: string;
+  organizationId: string;
+  driverName: string;
+  driverPhone: string;
+  vehicleNumber: string;
+  maxGrossWeightKg: number;
+  totalGrossWeightKg: number;
+  totalVolumeCubicFt: number;
+  totalCartons: number;
+  totalOrders: number;
+  totalCollectableCod: number;
+  actualCashCollected: number;
+  date: string;
+  status: 'PLANNED' | 'DISPATCHED' | 'COMPLETED';
+  stops: DeliveryRunStop[];
+}
+
+export interface VanSalesSession {
+  id: string;
+  agentId: string;
+  agentName: string;
+  vehicleNumber: string;
+  date: string;
+  status: 'OPEN' | 'CLOSED';
+  initialInventory: Array<{
+    skuId: string;
+    productName: string;
+    quantity: number;
+  }>;
+  currentInventory: Array<{
+    skuId: string;
+    productName: string;
+    quantity: number;
+  }>;
+  totalOrdersBooked: number;
+  totalGmvCollected: number;
+}
+
+export interface CustomerKhataRecord {
+  id: string;
+  retailerId: string;
+  customerName: string;
+  customerPhone: string;
+  totalDues: number;
+  lastUpdated: string;
+}
+
+export interface CustomerKhataEntry {
+  id: string;
+  khataRecordId: string;
+  type: KhataEntryType;
+  amount: number;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface DriverExpenseRecord {
+  id: string;
+  runSheetId: string;
+  driverName: string;
+  expenseType: 'DIESEL' | 'TOLL' | 'PARKING' | 'REPAIR' | 'CHAI_SNACKS';
+  amount: number;
+  billPhotoUrl?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface CoachingScorecard {
+  id: string;
+  agentId: string;
+  agentName: string;
+  managerName: string;
+  visitDate: string;
+  storeShopName: string;
+  pitchingScore: number; // 1-5
+  productKnowledgeScore: number; // 1-5
+  objectionHandlingScore: number; // 1-5
+  groomingScore: number; // 1-5
+  remarks: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  userId: string;
+  userName: string;
+  role: string;
+  action: AuditAction;
+  details: string;
+  previousState?: any;
+  newState?: any;
+  ipAddress?: string;
+  timestamp: string;
+}
+
+export interface SystemTelemetryStats {
+  serverTime: string;
+  uptimeSeconds: number;
+  memoryUsageMb: {
+    rss: number;
+    heapTotal: number;
+    heapUsed: number;
+  };
+  cpuLoad: number[];
+  activeConnections: number;
+  databaseStatus: 'CONNECTED' | 'DISCONNECTED';
+  minioStatus: 'CONNECTED' | 'DISCONNECTED';
+  totalProductsCount: number;
+  totalOrdersCount: number;
 }
 
 

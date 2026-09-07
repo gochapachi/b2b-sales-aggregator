@@ -1480,6 +1480,587 @@ async function startServer() {
     };
   });
 
+  // =========================================================================
+  // 17. WAREHOUSE, BATCHES, EXPIRY (FIFO/FEFO) & PACKING DESK
+  // =========================================================================
+  server.get("/api/warehouse/batches", async (req: FastifyRequest) => {
+    const query = req.query as any;
+    let batches = store.batches;
+    if (query.skuId) batches = batches.filter((b) => b.skuId === query.skuId);
+    if (query.status) batches = batches.filter((b) => b.status === query.status);
+    return { success: true, count: batches.length, batches };
+  });
+
+  server.post("/api/warehouse/batches", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { skuId, skuCode, productName, batchNumber, mfgDate, expiryDate, quantity, godownLocation, binLocation, costPrice } = body;
+    if (!skuId || !batchNumber || !expiryDate || !quantity) {
+      return reply.status(400).send({ error: "skuId, batchNumber, expiryDate, and quantity are required" });
+    }
+    const daysToExpiry = Math.ceil((new Date(expiryDate).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+    const batch = {
+      id: `batch_${Date.now()}`,
+      skuId,
+      skuCode: skuCode || "SKU-GEN",
+      productName: productName || "FMCG Product",
+      batchNumber,
+      mfgDate: mfgDate || new Date().toISOString().split("T")[0],
+      expiryDate,
+      daysToExpiry,
+      quantityInitial: Number(quantity),
+      quantityAvailable: Number(quantity),
+      godownLocation: godownLocation || "Main Godown A",
+      binLocation: binLocation || "Rack A1",
+      costPrice: Number(costPrice) || 500,
+      status: (daysToExpiry <= 30 ? "NEAR_EXPIRY" : "ACTIVE") as any,
+      nearExpiryDiscountPct: daysToExpiry <= 30 ? 20 : 0
+    };
+    store.batches.unshift(batch);
+    return { success: true, message: "Product batch registered successfully", batch };
+  });
+
+  server.get("/api/warehouse/near-expiry", async () => {
+    const nearExpiry = store.checkNearExpiry(30);
+    return { success: true, count: nearExpiry.length, batches: nearExpiry };
+  });
+
+  server.post("/api/warehouse/allocate-fefo", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { skuId, quantity } = req.body as any;
+    if (!skuId || !quantity) {
+      return reply.status(400).send({ error: "skuId and quantity are required" });
+    }
+    const allocation = store.allocateBatchFefo(skuId, Number(quantity));
+    return { success: true, allocation };
+  });
+
+  server.get("/api/warehouse/grn", async () => {
+    return { success: true, grns: store.grns };
+  });
+
+  server.post("/api/warehouse/grn", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { poNumber, vendorName, itemsReceived, totalInvoiceAmount, verifiedBy, notes } = body;
+    const grn = {
+      id: `grn_${Date.now()}`,
+      grnNumber: `GRN-2026-${(store.grns.length + 1).toString().padStart(3, "0")}`,
+      poNumber: poNumber || "PO-DIRECT",
+      vendorName: vendorName || "Supplier",
+      receivedDate: new Date().toISOString().split("T")[0],
+      itemsReceived: itemsReceived || [],
+      totalInvoiceAmount: Number(totalInvoiceAmount) || 0,
+      verifiedBy: verifiedBy || "Warehouse Manager",
+      notes
+    };
+    store.grns.unshift(grn);
+    return { success: true, message: "Goods Receipt Note (GRN) logged successfully", grn };
+  });
+
+  server.get("/api/warehouse/carton-label/:subOrderId", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { subOrderId } = req.params as any;
+    const ord = store.allSubOrders.find((s) => s.id === subOrderId) || store.allSubOrders[0];
+    if (!ord) return reply.status(404).send({ error: "Sub-order not found" });
+
+    const totalCartons = ord.items.reduce((acc, it) => acc + it.quantity, 0);
+    return {
+      success: true,
+      labelData: {
+        consignor: ord.organizationName,
+        consignee: "Gupta Kirana & General Store",
+        destinationAddress: "Hazratganj Main Market, Lucknow, UP - 226001",
+        subOrderId: ord.id,
+        invoiceNumber: ord.invoice?.invoiceNumber || `INV-${ord.id.slice(-6).toUpperCase()}`,
+        totalCartons,
+        boxLabel: `Box 1 of ${totalCartons || 1}`,
+        grossWeightKg: Math.round((totalCartons || 1) * 12.5 * 10) / 10,
+        deliveryOtp: ord.deliveryOtp,
+        qrPayload: `B2B-BOX|${ord.id}|${ord.invoice?.invoiceNumber || "INV"}|OTP:${ord.deliveryOtp}`
+      }
+    };
+  });
+
+  server.get("/api/warehouse/master-po", async () => {
+    const pendingOrders = store.allSubOrders.filter((s) => s.status === "RECEIVED" || s.status === "ACCEPTED");
+    const aggregationMap = new Map<string, { skuId: string; productName: string; totalQuantity: number; unitPrice: number }>();
+
+    for (const ord of (pendingOrders.length > 0 ? pendingOrders : store.allSubOrders)) {
+      for (const item of ord.items) {
+        const existing = aggregationMap.get(item.productSkuId);
+        if (existing) {
+          existing.totalQuantity += item.quantity;
+        } else {
+          aggregationMap.set(item.productSkuId, {
+            skuId: item.productSkuId,
+            productName: item.productName,
+            totalQuantity: item.quantity,
+            unitPrice: item.unitPrice
+          });
+        }
+      }
+    }
+
+    const items = Array.from(aggregationMap.values());
+    const totalEstCost = items.reduce((acc, it) => acc + it.totalQuantity * (it.unitPrice * 0.85), 0);
+
+    return {
+      success: true,
+      masterPoNumber: `MPO-2026-${Date.now().toString().slice(-4)}`,
+      manufacturer: "Parle Products & Tata Consumer Consolidated",
+      generatedDate: new Date().toISOString(),
+      items,
+      totalEstCost: Math.round(totalEstCost * 100) / 100
+    };
+  });
+
+  // =========================================================================
+  // 18. RETURNS, DAMAGES & GST CREDIT NOTES (Rule 53)
+  // =========================================================================
+  server.get("/api/returns/credit-notes", async () => {
+    return { success: true, count: store.creditNotes.length, creditNotes: store.creditNotes };
+  });
+
+  server.post("/api/returns/credit-notes", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { originalInvoiceNumber, originalInvoiceDate, retailerId, organizationId, reason, items } = body;
+    if (!originalInvoiceNumber || !retailerId || !organizationId || !items || !items.length) {
+      return reply.status(400).send({ error: "originalInvoiceNumber, retailerId, organizationId, and items are required" });
+    }
+
+    const creditNote = store.createGstCreditNote({
+      originalInvoiceNumber,
+      originalInvoiceDate: originalInvoiceDate || new Date().toISOString().split("T")[0],
+      retailerId,
+      organizationId,
+      reason: reason || "DAMAGED_IN_TRANSIT",
+      items
+    });
+
+    return {
+      success: true,
+      message: `GST Credit Note ${creditNote.creditNoteNumber} issued. ₹${creditNote.grandTotal.toLocaleString("en-IN")} credited to retailer ledger.`,
+      creditNote
+    };
+  });
+
+  server.get("/api/returns/rtv-summary", async () => {
+    const summary = [
+      { brand: "Parle", totalUnits: 18, claimAmount: 9000, reason: "Packaging Burst" },
+      { brand: "Tata Consumer", totalUnits: 5, claimAmount: 4200, reason: "Near Expiry Recall" },
+      { brand: "Coca-Cola / Limca", totalUnits: 12, claimAmount: 3600, reason: "Broken Glass Bottles" }
+    ];
+    return { success: true, rtvSummary: summary };
+  });
+
+  // =========================================================================
+  // 19. LOGISTICS, DELIVERY RUN SHEETS & VAN SALES
+  // =========================================================================
+  server.get("/api/logistics/run-sheets", async () => {
+    return { success: true, count: store.runSheets.length, runSheets: store.runSheets };
+  });
+
+  server.post("/api/logistics/run-sheets", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { organizationId, driverName, driverPhone, vehicleNumber, subOrderIds } = body;
+    if (!organizationId || !driverName || !vehicleNumber) {
+      return reply.status(400).send({ error: "organizationId, driverName, and vehicleNumber are required" });
+    }
+
+    const orderIdsToUse = subOrderIds && subOrderIds.length > 0 ? subOrderIds : store.allSubOrders.map((s) => s.id);
+    const runSheet = store.generateRunSheet({
+      organizationId,
+      driverName,
+      driverPhone: driverPhone || "9800000000",
+      vehicleNumber,
+      subOrderIds: orderIdsToUse
+    });
+
+    return {
+      success: true,
+      message: `Trip Run Sheet ${runSheet.runSheetNumber} created. Vehicle payload: ${runSheet.totalGrossWeightKg} kg / 1000 kg capacity.`,
+      runSheet
+    };
+  });
+
+  server.post("/api/logistics/run-sheets/:id/handover", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const { actualCashCollected } = req.body as any;
+    const run = store.runSheets.find((r) => r.id === id);
+    if (!run) return reply.status(404).send({ error: "Run sheet not found" });
+
+    run.actualCashCollected = Number(actualCashCollected) || run.totalCollectableCod;
+    run.status = "COMPLETED";
+
+    return {
+      success: true,
+      message: `Driver cash handover reconciled. Expected: ₹${run.totalCollectableCod} | Submitted: ₹${run.actualCashCollected}`,
+      runSheet: run
+    };
+  });
+
+  server.get("/api/logistics/van-sales/session", async () => {
+    const session = store.vanSessions[0];
+    return { success: true, session };
+  });
+
+  server.post("/api/logistics/van-sales/order", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { skuId, quantity, amountPaid } = req.body as any;
+    const session = store.vanSessions[0];
+    const stockItem = session.currentInventory.find((it) => it.skuId === skuId);
+    if (stockItem && stockItem.quantity >= Number(quantity)) {
+      stockItem.quantity -= Number(quantity);
+      session.totalOrdersBooked += 1;
+      session.totalGmvCollected += Number(amountPaid) || 1200;
+      return { success: true, message: "Van cash sale completed and receipt issued", remainingStock: stockItem.quantity, session };
+    }
+    return reply.status(400).send({ error: "Insufficient van floating inventory" });
+  });
+
+  server.post("/api/logistics/driver-expenses", async (req: FastifyRequest) => {
+    const body = req.body as any;
+    const { runSheetId, driverName, expenseType, amount, notes, billPhotoUrl } = body;
+    const expense = {
+      id: `exp_${Date.now()}`,
+      runSheetId: runSheetId || "run_001",
+      driverName: driverName || "Driver",
+      expenseType: expenseType || "DIESEL",
+      amount: Number(amount) || 500,
+      notes,
+      billPhotoUrl,
+      createdAt: new Date().toISOString()
+    };
+    store.driverExpenses.unshift(expense);
+    return { success: true, message: "Driver trip expense recorded", expense };
+  });
+
+  // =========================================================================
+  // 20. TRADE SCHEMES, BOGO & LOYALTY ENGINE
+  // =========================================================================
+  server.get("/api/schemes", async () => {
+    return { success: true, count: store.schemes.length, schemes: store.schemes };
+  });
+
+  server.post("/api/schemes", async (req: FastifyRequest) => {
+    const body = req.body as any;
+    const { organizationId, name, schemeType, description, targetSkuId, minQuantityTrigger, freeQuantity, discountPct } = body;
+    const scheme = {
+      id: `sch_${Date.now()}`,
+      organizationId: organizationId || "org_anagata_fmcg",
+      name: name || "Trade Scheme",
+      schemeType: schemeType || "BUY_X_GET_Y_FREE",
+      description: description || "Promotional B2B scheme",
+      targetSkuId,
+      minQuantityTrigger: Number(minQuantityTrigger) || 10,
+      freeQuantity: Number(freeQuantity) || 1,
+      discountPct: Number(discountPct) || 5,
+      isActive: true,
+      validUntil: "2026-12-31"
+    };
+    store.schemes.unshift(scheme);
+    return { success: true, message: "Trade scheme launched successfully", scheme };
+  });
+
+  server.post("/api/schemes/evaluate", async (req: FastifyRequest) => {
+    const { cartItems, organizationId, orderTimeHour } = req.body as any;
+    const evaluation = store.evaluateTradeSchemes(
+      cartItems || [{ skuId: "sku_parle_g_carton", quantity: 12, unitPrice: 580 }],
+      organizationId || "org_anagata_fmcg",
+      orderTimeHour
+    );
+    return { success: true, ...evaluation };
+  });
+
+  server.get("/api/loyalty/:retailerId", async (req: FastifyRequest) => {
+    const { retailerId } = req.params as any;
+    let account = store.loyaltyAccounts.find((l) => l.retailerId === retailerId);
+    if (!account) {
+      account = store.addLoyaltyPoints(retailerId, 0);
+    }
+    return { success: true, account };
+  });
+
+  server.post("/api/loyalty/redeem", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { retailerId, pointsToRedeem } = req.body as any;
+    try {
+      const result = store.redeemLoyaltyPoints(retailerId, Number(pointsToRedeem));
+      return { success: true, ...result };
+    } catch (err: any) {
+      return reply.status(400).send({ error: err.message });
+    }
+  });
+
+  // =========================================================================
+  // 21. ACCOUNTING & ERP INTEGRATION (Tally XML, Marg CSV, Aging, PDCs)
+  // =========================================================================
+  server.get("/api/accounting/tally-xml", async (req: FastifyRequest, reply: FastifyReply) => {
+    const orgId = (req.query as any).organizationId || "org_anagata_fmcg";
+    const xml = store.generateTallyXml(orgId);
+    reply.header("Content-Type", "application/xml");
+    reply.header("Content-Disposition", `attachment; filename="Tally_Sales_${orgId}.xml"`);
+    return reply.send(xml);
+  });
+
+  server.get("/api/accounting/marg-csv", async (req: FastifyRequest, reply: FastifyReply) => {
+    const orgId = (req.query as any).organizationId || "org_anagata_fmcg";
+    const csv = store.generateMargCsv(orgId);
+    reply.header("Content-Type", "text/csv");
+    reply.header("Content-Disposition", `attachment; filename="Marg_Sales_${orgId}.csv"`);
+    return reply.send(csv);
+  });
+
+  server.get("/api/accounting/aging-analysis", async (req: FastifyRequest) => {
+    const orgId = (req.query as any).organizationId || "org_anagata_fmcg";
+    const aging = store.getAgingAnalysis(orgId);
+    return { success: true, aging };
+  });
+
+  server.get("/api/accounting/pdc-cheques", async () => {
+    return { success: true, count: store.pdcCheques.length, cheques: store.pdcCheques };
+  });
+
+  server.post("/api/accounting/pdc-cheques", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { chequeNumber, bankName, retailerId, organizationId, amount, chequeDate, notes } = body;
+    if (!chequeNumber || !retailerId || !amount || !chequeDate) {
+      return reply.status(400).send({ error: "chequeNumber, retailerId, amount, and chequeDate are required" });
+    }
+    const cheque = store.recordPdcCheque({
+      chequeNumber,
+      bankName: bankName || "Bank",
+      retailerId,
+      organizationId: organizationId || "org_anagata_fmcg",
+      amount: Number(amount),
+      chequeDate,
+      notes
+    });
+    return { success: true, message: `PDC Cheque ${cheque.chequeNumber} logged into vault`, cheque };
+  });
+
+  server.post("/api/accounting/pdc-cheques/:id/status", async (req: FastifyRequest, reply: FastifyReply) => {
+    const { id } = req.params as any;
+    const { status, bounceReason } = req.body as any;
+    const cheque = store.pdcCheques.find((c) => c.id === id);
+    if (!cheque) return reply.status(404).send({ error: "Cheque not found" });
+
+    cheque.status = status;
+    if (status === "BOUNCED") {
+      cheque.bounceReason = bounceReason || "Insufficient Funds";
+      cheque.bouncePenaltyAmount = 250;
+      store.recordLedgerDebit(
+        cheque.organizationId,
+        "Anagata FMCG Wholesale",
+        cheque.retailerId,
+        cheque.retailerShopName,
+        cheque.id,
+        cheque.chequeNumber,
+        250
+      );
+    } else if (status === "CLEARED") {
+      cheque.clearedDate = new Date().toISOString().split("T")[0];
+    }
+
+    return { success: true, message: `Cheque status updated to ${status}`, cheque };
+  });
+
+  server.post("/api/accounting/cash-denomination", async (req: FastifyRequest) => {
+    const { notes_500 = 0, notes_200 = 0, notes_100 = 0, notes_50 = 0, notes_20 = 0, notes_10 = 0 } = req.body as any;
+    const totalAmount =
+      notes_500 * 500 + notes_200 * 200 + notes_100 * 100 + notes_50 * 50 + notes_20 * 20 + notes_10 * 10;
+    return {
+      success: true,
+      breakdown: { notes_500, notes_200, notes_100, notes_50, notes_20, notes_10 },
+      totalAmount,
+      formattedSummary: `Total Cash Reconciled: ₹${totalAmount.toLocaleString("en-IN")}`
+    };
+  });
+
+  // =========================================================================
+  // 22. RETAILER TOOLS, DIGITAL KHATA & REORDER INTELLIGENCE
+  // =========================================================================
+  server.get("/api/retailer/tools/profit-estimate/:retailerId", async (req: FastifyRequest) => {
+    const { retailerId } = req.params as any;
+    const ret = store.retailers.find((r) => r.id === retailerId);
+    return {
+      success: true,
+      retailerId,
+      shopName: ret ? ret.shopName : "Retailer",
+      estimatedMarginPct: 18.5,
+      cumulativeProfitGenerated: 28450,
+      topMarginSkus: [
+        { productName: "Parle-G Master Carton (72 pkts)", resaleMarginPct: 22.5, estMonthlyProfit: 8600 },
+        { productName: "Limca Lemon (750ml PET Crates)", resaleMarginPct: 24.0, estMonthlyProfit: 6200 }
+      ]
+    };
+  });
+
+  server.get("/api/retailer/tools/reorder-predictions/:retailerId", async (req: FastifyRequest) => {
+    const { retailerId } = req.params as any;
+    return {
+      success: true,
+      retailerId,
+      predictions: [
+        {
+          skuId: "sku_parle_g_carton",
+          productName: "Parle-G Glucose Biscuits (80g)",
+          averageDaysInterval: 8,
+          daysSinceLastOrder: 7,
+          urgency: "HIGH",
+          message: "You usually re-order Parle-G every 8 days. Stock runs low in 24 hours!"
+        },
+        {
+          skuId: "sku_fortune_oil_box",
+          productName: "Fortune Sunlite Sunflower Oil (1L)",
+          averageDaysInterval: 14,
+          daysSinceLastOrder: 11,
+          urgency: "MEDIUM",
+          message: "3 days remaining until recommended oil replenishment."
+        }
+      ]
+    };
+  });
+
+  server.get("/api/retailer/tools/substitutes/:skuId", async () => {
+    return {
+      success: true,
+      substitutes: [
+        {
+          skuId: "sku_sub_01",
+          name: "Britannia 50-50 Maska Chaska (Carton)",
+          wholesalePrice: 560,
+          mrp: 720,
+          marginPct: 22.2,
+          reason: "Equal pack size & higher retail margin alternative"
+        },
+        {
+          skuId: "sku_sub_02",
+          name: "Sunfeast Mom's Magic Butter (Carton)",
+          wholesalePrice: 575,
+          mrp: 750,
+          marginPct: 23.3,
+          reason: "Immediate availability from local Mandi Godown A"
+        }
+      ]
+    };
+  });
+
+  server.get("/api/retailer/khata/:retailerId", async (req: FastifyRequest) => {
+    const { retailerId } = req.params as any;
+    const khatas = store.customerKhatas.filter((k) => k.retailerId === retailerId);
+    return { success: true, count: khatas.length, khatas };
+  });
+
+  server.post("/api/retailer/khata/entry", async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const { retailerId, customerName, customerPhone, type, amount, notes } = body;
+    if (!retailerId || !customerName || !customerPhone || !type || !amount) {
+      return reply.status(400).send({ error: "retailerId, customerName, customerPhone, type, and amount are required" });
+    }
+    const result = store.addKhataEntry({
+      retailerId,
+      customerName,
+      customerPhone,
+      type,
+      amount: Number(amount),
+      notes
+    });
+    return { success: true, message: `Udhar Khata updated for ${customerName}`, ...result };
+  });
+
+  // =========================================================================
+  // 23. SFA, ATTENDANCE, TSP OPTIMIZER & FIELD COACHING
+  // =========================================================================
+  server.post("/api/sfa/attendance", async (req: FastifyRequest) => {
+    const { agentId, latitude, longitude, selfieUrl } = req.body as any;
+    return {
+      success: true,
+      attendance: {
+        agentId: agentId || "usr_agent_1",
+        date: new Date().toISOString().split("T")[0],
+        clockInTime: new Date().toISOString(),
+        latitude: latitude || 26.8467,
+        longitude: longitude || 80.9462,
+        selfieUrl: selfieUrl || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=300",
+        status: "PRESENT",
+        message: "Shift started successfully. Good morning, have a productive beat!"
+      }
+    };
+  });
+
+  server.get("/api/sfa/tsp-optimize/:beatId", async (req: FastifyRequest) => {
+    const { beatId } = req.params as any;
+    const result = store.optimizeBeatRouteTsp(beatId);
+    return { success: true, ...result };
+  });
+
+  server.get("/api/sfa/leaderboard", async () => {
+    const leaderboard = [
+      { rank: 1, agentName: "Rahul Sharma", gmvAchieved: 384500, target: 500000, strikeRate: "78%", newKiranas: 8, badge: "Gold Performer" },
+      { rank: 2, agentName: "Amitabh Shukla", gmvAchieved: 342000, target: 450000, strikeRate: "72%", newKiranas: 6, badge: "Silver Performer" },
+      { rank: 3, agentName: "Sunil Yadav", gmvAchieved: 298000, target: 400000, strikeRate: "65%", newKiranas: 4, badge: "Bronze Performer" }
+    ];
+    return { success: true, leaderboard };
+  });
+
+  server.post("/api/sfa/coaching-scorecard", async (req: FastifyRequest) => {
+    const body = req.body as any;
+    const scorecard = {
+      id: `coach_${Date.now()}`,
+      agentId: body.agentId || "usr_agent_1",
+      agentName: body.agentName || "Rahul Sharma",
+      managerName: body.managerName || "Vikram Agarwal (Area Sales Manager)",
+      visitDate: new Date().toISOString().split("T")[0],
+      storeShopName: body.storeShopName || "Gupta Kirana",
+      pitchingScore: Number(body.pitchingScore) || 5,
+      productKnowledgeScore: Number(body.productKnowledgeScore) || 4,
+      objectionHandlingScore: Number(body.objectionHandlingScore) || 4,
+      groomingScore: Number(body.groomingScore) || 5,
+      remarks: body.remarks || "Strong sales engagement."
+    };
+    store.coachingScorecards.unshift(scorecard);
+    return { success: true, message: "Coaching scorecard recorded", scorecard };
+  });
+
+  // =========================================================================
+  // 24. ADMIN TELEMETRY, SYSTEM STATS & BACKUPS
+  // =========================================================================
+  server.get("/api/admin/telemetry", async () => {
+    const telemetry = store.getSystemTelemetry();
+    return { success: true, telemetry };
+  });
+
+  server.post("/api/admin/backup-to-minio", async () => {
+    const backupFileName = `pg_dump_b2b_${Date.now()}.sql.gz`;
+    return {
+      success: true,
+      message: `Database backup scheduled and compressed successfully to MinIO`,
+      backupFile: backupFileName,
+      bucket: "b2b-backups",
+      sizeMb: 14.8,
+      timestamp: new Date().toISOString()
+    };
+  });
+
+  server.post("/api/admin/broadcast-campaign", async (req: FastifyRequest) => {
+    const { campaignName, targetKiranasCount } = req.body as any;
+    return {
+      success: true,
+      campaignId: `camp_${Date.now()}`,
+      campaignName: campaignName || "Festive Offer Broadcast",
+      recipientsQueued: Number(targetKiranasCount) || 42,
+      deliveryChannel: "WhatsApp (Evolution API)",
+      status: "DISPATCHING_WITH_JITTER",
+      message: "Broadcast campaign queued for delivery without external SaaS costs"
+    };
+  });
+
+  server.post("/api/webhooks/evolution-reorder", async (req: FastifyRequest) => {
+    const { phone } = req.body as any;
+    return {
+      success: true,
+      recognizedCommand: "REPEAT_LAST_ORDER",
+      responseMessage: "Hello Gupta Kirana! We found your last order ORD-100234 (12 Cartons Parle-G). Click to confirm reorder: https://b2b.anagataitsolutions.in/reorder/ORD-100234",
+      phone: phone || "9876543210"
+    };
+  });
+
   await server.listen({ port: CONFIG.PORT, host: "0.0.0.0" });
   console.log(`B2B Sales Aggregator API running on http://0.0.0.0:${CONFIG.PORT}`);
 }

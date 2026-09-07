@@ -22,7 +22,11 @@ import {
   Percent,
   Receipt,
   Eye,
-  Filter
+  Filter,
+  Boxes,
+  BookOpen,
+  Trophy,
+  FileSpreadsheet
 } from "lucide-react";
 import SavingsCalculator from "../components/roi/SavingsCalculator";
 import KycVerificationModal from "../components/kyc/KycVerificationModal";
@@ -34,6 +38,11 @@ import SellerProductStudio from "../components/seller/SellerProductStudio";
 import SellerCreditManagement from "../components/seller/SellerCreditManagement";
 import EWayBillNicModal from "../components/orders/EWayBillNicModal";
 import OpenStreetMapRoute from "../components/maps/OpenStreetMapRoute";
+import WarehousePackingDesk from "../components/warehouse/WarehousePackingDesk";
+import DeliveryRunSheetView from "../components/logistics/DeliveryRunSheetView";
+import TallyMargExportDesk from "../components/accounting/TallyMargExportDesk";
+import RetailerSmartTools from "../components/retailer/RetailerSmartTools";
+import SfaLeaderboardAndAudio from "../components/sfa/SfaLeaderboardAndAudio";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
@@ -41,8 +50,11 @@ export default function Home() {
   const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("RETAILER");
   const [loading, setLoading] = useState(false);
 
-  // Seller Data & Merchandising Sub-Tabs
-  const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "ROI">("ORDERS");
+  // Sub-tabs for roles
+  const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "PACKING" | "LOGISTICS" | "ERP" | "ROI">("ORDERS");
+  const [retailerTab, setRetailerTab] = useState<"CATALOG" | "SMART_TOOLS">("CATALOG");
+  const [agentTab, setAgentTab] = useState<"CRM" | "LEADERBOARD_COACHING">("CRM");
+
   const [sellerOrders, setSellerOrders] = useState<any[]>([]);
   const [selectedSubOrder, setSelectedSubOrder] = useState<any | null>(null);
   const [selectedEWaySubOrder, setSelectedEWaySubOrder] = useState<string | null>(null);
@@ -345,7 +357,46 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Brand Store Discovery Row */}
+            {/* Retailer Section Tabs */}
+            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200">
+              <button
+                onClick={() => setRetailerTab("CATALOG")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  retailerTab === "CATALOG"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                Wholesale Catalog & Cart
+              </button>
+              <button
+                onClick={() => setRetailerTab("SMART_TOOLS")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  retailerTab === "SMART_TOOLS"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                Retailer Smart Tools (Voice AI, Udhar Khata, Margins)
+              </button>
+            </div>
+
+            {retailerTab === "SMART_TOOLS" && (
+              <RetailerSmartTools
+                apiBase={API_BASE}
+                retailerId="ret_gupta_kirana"
+                onSearchQuery={(q) => {
+                  setSelectedCategory("ALL");
+                  setRetailerTab("CATALOG");
+                }}
+              />
+            )}
+
+            {retailerTab === "CATALOG" && (
+              <>
+                {/* Brand Store Discovery Row */}
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <h3 className="font-bold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
@@ -614,14 +665,49 @@ export default function Home() {
                 </div>
               </div>
             </div>
+            </>
+            )}
           </div>
         )}
 
         {/* ================= 2. FIELD SALES AGENT SFA CRM VIEW ================= */}
         {activeRole === "AGENT" && (
           <div className="space-y-6">
-            <OpenStreetMapRoute apiBase={API_BASE} beatId="beat_hazratganj_mon" />
-            <AgentCrmDashboard apiBase={API_BASE} agentId="usr_agent_1" />
+            <div className="flex items-center gap-2 p-1.5 bg-slate-200/80 rounded-xl max-w-fit border border-slate-200">
+              <button
+                onClick={() => setAgentTab("CRM")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  agentTab === "CRM"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                Beat Route & Store Visits
+              </button>
+              <button
+                onClick={() => setAgentTab("LEADERBOARD_COACHING")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1.5 ${
+                  agentTab === "LEADERBOARD_COACHING"
+                    ? "bg-white text-indigo-700 shadow-sm"
+                    : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Trophy className="w-3.5 h-3.5 text-amber-500" />
+                Gamified Leaderboard & Coaching Briefing
+              </button>
+            </div>
+
+            {agentTab === "CRM" && (
+              <>
+                <OpenStreetMapRoute apiBase={API_BASE} beatId="beat_hazratganj_mon" />
+                <AgentCrmDashboard apiBase={API_BASE} agentId="usr_agent_1" />
+              </>
+            )}
+
+            {agentTab === "LEADERBOARD_COACHING" && (
+              <SfaLeaderboardAndAudio apiBase={API_BASE} />
+            )}
           </div>
         )}
 
@@ -655,6 +741,33 @@ export default function Home() {
                 Retailer Credit & Ledgers
               </button>
               <button
+                onClick={() => setSellerTab("PACKING")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  sellerTab === "PACKING" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Boxes className="w-3.5 h-3.5" />
+                FEFO Batches & Labels
+              </button>
+              <button
+                onClick={() => setSellerTab("LOGISTICS")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  sellerTab === "LOGISTICS" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Truck className="w-3.5 h-3.5" />
+                Trip Run Sheets & Vans
+              </button>
+              <button
+                onClick={() => setSellerTab("ERP")}
+                className={`px-4 py-2 rounded-lg text-xs font-bold transition flex items-center gap-1 ${
+                  sellerTab === "ERP" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <FileSpreadsheet className="w-3.5 h-3.5" />
+                Tally XML & Marg ERP
+              </button>
+              <button
                 onClick={() => setSellerTab("ROI")}
                 className={`px-4 py-2 rounded-lg text-xs font-bold transition ${
                   sellerTab === "ROI" ? "bg-white text-indigo-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
@@ -670,6 +783,18 @@ export default function Home() {
 
             {sellerTab === "CREDIT" && (
               <SellerCreditManagement apiBase={API_BASE} organizationId="org_anagata_fmcg" />
+            )}
+
+            {sellerTab === "PACKING" && (
+              <WarehousePackingDesk apiBase={API_BASE} />
+            )}
+
+            {sellerTab === "LOGISTICS" && (
+              <DeliveryRunSheetView apiBase={API_BASE} />
+            )}
+
+            {sellerTab === "ERP" && (
+              <TallyMargExportDesk apiBase={API_BASE} organizationId="org_anagata_fmcg" />
             )}
 
             {sellerTab === "ROI" && (

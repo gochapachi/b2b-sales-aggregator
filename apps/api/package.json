@@ -5,7 +5,7 @@
   "main": "dist/server.js",
   "scripts": {
     "build": "tsc",
-    "test": "node --test --test-concurrency=1 tests/api.test.js tests/udaan-crm.test.js tests/seller-studio-credit.test.js",
+    "test": "node --test --test-concurrency=1 tests/api.test.js tests/udaan-crm.test.js tests/seller-studio-credit.test.js tests/advanced-100-features.test.js",
     "start": "node dist/server.js",
     "dev": "node dist/server.js"
   },
