@@ -603,14 +603,18 @@ async function run() {
   // ENTERPRISE EXPANSION (100 FEATURES / R1–R7) VERIFICATION SUITE
   // =========================================================================
 
+  const TEST_PHONE_1 = process.env.TEST_PHONE_1 || "919026019566";
+  const TEST_PHONE_2 = process.env.TEST_PHONE_2 || "917705871046";
+
   // 49. R1: Kirana Retailer Self-Service Public Registration (Queue as PENDING_APPROVAL)
-  const regPhone = `98${Math.floor(10000000 + Math.random() * 90000000)}`;
+  const regPhone = TEST_PHONE_1;
   const retailerSignupRes = await request("POST", `${API_BASE}/api/signup/retailer`, {
     storeName: "Maa Sharda Kirana Store",
     shopName: "Maa Sharda Kirana Store",
     ownerName: "Satish Chandra",
     phone: regPhone,
     whatsappNumber: regPhone,
+    overwritePhone: true,
     address: "Plot 15, Sector 4, Vikas Nagar, Lucknow",
     city: "Lucknow",
     pincode: "226022",
@@ -630,7 +634,7 @@ async function run() {
   );
 
   // 50. R1: Wholesale Distributor Self-Service Public Registration (Queue as PENDING_APPROVAL)
-  const sellerRegPhone = `97${Math.floor(10000000 + Math.random() * 90000000)}`;
+  const sellerRegPhone = TEST_PHONE_2;
   const sellerSignupRes = await request("POST", `${API_BASE}/api/signup/seller`, {
     businessName: "Lucknow Super Wholesale Hub LLP",
     tradeName: "Lucknow Wholesale Hub",
@@ -638,6 +642,7 @@ async function run() {
     phone: sellerRegPhone,
     contactPhone: sellerRegPhone,
     whatsappNumber: sellerRegPhone,
+    overwritePhone: true,
     gstin: "09AAACH1234M1Z5",
     address: "Warehouse 12, Transport Nagar, Lucknow",
     latitude: 26.782000,
@@ -687,7 +692,7 @@ async function run() {
   );
 
   // 53. R2: Field Agent Assisted Onboarding with Automated Credential Generation
-  const assistedOnboardPhone = `99${Math.floor(10000000 + Math.random() * 90000000)}`;
+  const assistedOnboardPhone = TEST_PHONE_2;
   const assistedOnboardRes = await request("POST", `${API_BASE}/api/onboarding`, {
     agentId: "usr_agent_1",
     storeName: "Awadh Corner Kirana",
@@ -695,6 +700,7 @@ async function run() {
     ownerName: "Harish Chandra",
     phone: assistedOnboardPhone,
     whatsappNumber: assistedOnboardPhone,
+    overwritePhone: true,
     address: "Lane 4, Narahi Bazaar, Hazratganj",
     latitude: 26.851000,
     longitude: 80.952000

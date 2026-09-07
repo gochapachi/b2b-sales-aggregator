@@ -279,6 +279,10 @@ async function startServer() {
     }
 
     // 1. Phone collision check
+    if (body.overwritePhone) {
+      store.users = store.users.filter((u) => u.phone !== phone);
+      store.retailers = store.retailers.filter((r) => r.phone !== phone);
+    }
     const existingPhone = store.users.find((u) => u.phone === phone) || store.retailers.find((r) => r.phone === phone);
     if (existingPhone) {
       return reply.status(409).send({
@@ -375,6 +379,11 @@ async function startServer() {
       return reply.status(400).send({
         error: "Missing required seller signup fields: businessName, ownerName, contactPhone, gstin, address"
       });
+    }
+
+    if (body.overwritePhone) {
+      store.users = store.users.filter((u) => u.phone !== contactPhone);
+      store.organizations = store.organizations.filter((o) => o.contactPhone !== contactPhone && o.gstin !== gstin);
     }
 
     const existingUser = store.users.find((u) => u.phone === contactPhone);
@@ -625,6 +634,11 @@ async function startServer() {
     }
 
     // 1. Phone collision check
+    if (body.overwritePhone) {
+      store.users = store.users.filter((u) => u.phone !== phone);
+      store.retailers = store.retailers.filter((r) => r.phone !== phone);
+    }
+
     const existingUser = store.users.find((u) => u.phone === phone);
     const existingRetailer = store.retailers.find((r) => r.phone === phone);
     if (existingUser || existingRetailer) {

@@ -1054,7 +1054,7 @@ class InMemoryDataStore {
     },
     {
       id: "usr_ret_1",
-      phone: "9555555555",
+      phone: "919026019566",
       name: "Ramesh Gupta",
       role: "RETAILER",
       status: "ACTIVE",
@@ -1109,8 +1109,8 @@ class InMemoryDataStore {
       userId: "usr_ret_1",
       shopName: "Gupta Kirana & General Store",
       ownerName: "Ramesh Gupta",
-      phone: "9555555555",
-      whatsappNumber: "9555555555",
+      phone: "919026019566",
+      whatsappNumber: "919026019566",
       gstin: "09ABCDE1234F1Z8",
       documentType: "GSTIN",
       kycDocUrl: "https://server.anagataitsolutions.in/docs/gupta_gst.pdf",
@@ -1659,7 +1659,7 @@ class InMemoryDataStore {
           latitude: 26.8467,
           longitude: 80.9462,
           address: "Shop 4, Near Mayfair, Hazratganj",
-          whatsappNumber: "9555555555"
+          whatsappNumber: "919026019566"
         },
         {
           id: "stop_2",
