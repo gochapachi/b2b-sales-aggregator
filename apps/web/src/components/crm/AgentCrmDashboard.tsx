@@ -18,7 +18,11 @@ import {
   Building,
   AlertCircle,
   X,
-  CreditCard
+  CreditCard,
+  Copy,
+  KeyRound,
+  ShieldAlert,
+  Navigation
 } from "lucide-react";
 
 interface AgentCrmDashboardProps {
@@ -41,7 +45,7 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
   const [selectedRetailer360, setSelectedRetailer360] = useState<any | null>(null);
   const [isRetailer360Open, setIsRetailer360Open] = useState(false);
 
-  // New Lead Modal
+  // New Store Onboarding Modal
   const [isNewLeadModalOpen, setIsNewLeadModalOpen] = useState(false);
   const [newLeadForm, setNewLeadForm] = useState({
     shopName: "",
@@ -49,8 +53,13 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
     phone: "",
     address: "",
     city: "Lucknow",
-    pincode: "226001"
+    pincode: "226001",
+    latitude: 26.8520,
+    longitude: 80.9510
   });
+  const [onboardedResult, setOnboardedResult] = useState<any | null>(null);
+  const [onboardError, setOnboardError] = useState<string | null>(null);
+  const [detectingGps, setDetectingGps] = useState(false);
 
   // Payment Collection Modal
   const [isCollectModalOpen, setIsCollectModalOpen] = useState(false);
@@ -116,30 +125,59 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
     }
   };
 
-  // Handle Onboard New Lead
+  // Handle GPS detection
+  const handleDetectGpsForOnboard = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser");
+      return;
+    }
+    setDetectingGps(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setNewLeadForm((prev) => ({
+          ...prev,
+          latitude: parseFloat(pos.coords.latitude.toFixed(6)),
+          longitude: parseFloat(pos.coords.longitude.toFixed(6))
+        }));
+        setDetectingGps(false);
+      },
+      (err) => {
+        alert("GPS Error: " + err.message + ". Using current coordinates.");
+        setDetectingGps(false);
+      },
+      { timeout: 10000, enableHighAccuracy: true }
+    );
+  };
+
+  // Handle Onboard New Store with Automated ID & Password
   const handleCreateLead = async (e: React.FormEvent) => {
     e.preventDefault();
+    setOnboardError(null);
     if (!newLeadForm.shopName || !newLeadForm.ownerName || !newLeadForm.phone) {
       alert("Please fill in required fields");
       return;
     }
 
     try {
-      const res = await fetch(`${apiBase}/api/crm/leads`, {
+      const res = await fetch(`${apiBase}/api/onboarding`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newLeadForm)
-      }).then((r) => r.json());
+        body: JSON.stringify({
+          ...newLeadForm,
+          agentId,
+          beatId: beatData?.beatId || "beat_hazratganj_mon"
+        })
+      });
+      const data = await res.json();
 
-      if (res.success) {
-        setIsNewLeadModalOpen(false);
-        setNewLeadForm({ shopName: "", ownerName: "", phone: "", address: "", city: "Lucknow", pincode: "226001" });
+      if (res.ok && data.success) {
+        setOnboardedResult(data);
         await loadCrmData();
       } else {
-        alert(res.error);
+        setOnboardError(data.message || data.error || "Onboarding failed.");
       }
     } catch (e: any) {
-      alert("Error: " + e.message);
+      setOnboardError("Error: " + e.message);
     }
   };
 
@@ -623,67 +661,162 @@ export default function AgentCrmDashboard({ apiBase, agentId = "usr_agent_1" }: 
         <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-md w-full p-6 space-y-4">
             <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <h3 className="font-bold text-base text-slate-900">Onboard New Kirana Store</h3>
-              <button onClick={() => setIsNewLeadModalOpen(false)} className="text-slate-400 hover:text-slate-700">
+              <h3 className="font-bold text-base text-slate-900">
+                {onboardedResult ? "Store Onboarded & Credentials Generated" : "Onboard New Kirana Store"}
+              </h3>
+              <button
+                onClick={() => {
+                  setIsNewLeadModalOpen(false);
+                  setOnboardedResult(null);
+                  setOnboardError(null);
+                }}
+                className="text-slate-400 hover:text-slate-700"
+              >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleCreateLead} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Shop / Business Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Laxmi Provision Store"
-                  value={newLeadForm.shopName}
-                  onChange={(e) => setNewLeadForm({ ...newLeadForm, shopName: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-lg"
-                />
-              </div>
+            {onboardedResult ? (
+              <div className="space-y-4 text-xs">
+                <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 space-y-2">
+                  <div className="flex items-center gap-2 font-black text-sm text-emerald-800">
+                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                    <span>Store Registered Successfully!</span>
+                  </div>
+                  <p className="text-[11px] text-emerald-700">
+                    Assigned to your beat route with 15m territory exclusivity locked.
+                  </p>
+                </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Proprietor / Owner Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder="e.g. Shiv Kumar"
-                  value={newLeadForm.ownerName}
-                  onChange={(e) => setNewLeadForm({ ...newLeadForm, ownerName: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-lg"
-                />
-              </div>
+                <div className="bg-slate-900 text-white p-4 rounded-xl space-y-3 font-mono">
+                  <div className="flex justify-between items-center text-[11px] text-slate-400 border-b border-slate-800 pb-2">
+                    <span>RETAILER CREDENTIALS</span>
+                    <span className="text-emerald-400 font-bold">READY</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Login ID:</span>
+                    <strong className="text-white text-sm">{onboardedResult.credentials?.loginId || newLeadForm.phone}</strong>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Temp Password:</span>
+                    <strong className="text-amber-300 text-sm">{onboardedResult.credentials?.password || "SECURE_PASS"}</strong>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(`Login ID: ${onboardedResult.credentials?.loginId}\nPassword: ${onboardedResult.credentials?.password}\nPortal: https://b2b.anagataitsolutions.in`);
+                      alert("Credentials copied to clipboard!");
+                    }}
+                    className="w-full py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition"
+                  >
+                    <Copy className="w-3.5 h-3.5" /> Copy Credentials
+                  </button>
+                </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Mobile / WhatsApp Number *</label>
-                <input
-                  type="tel"
-                  required
-                  placeholder="10-digit mobile number"
-                  value={newLeadForm.phone}
-                  onChange={(e) => setNewLeadForm({ ...newLeadForm, phone: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-lg"
-                />
-              </div>
+                <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-xl text-indigo-900 text-[11px] flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>Automated welcome message with login credentials dispatched to <strong>{newLeadForm.phone}</strong> via Evolution API WhatsApp.</span>
+                </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Store Address</label>
-                <input
-                  type="text"
-                  placeholder="Shop #, Street, Market"
-                  value={newLeadForm.address}
-                  onChange={(e) => setNewLeadForm({ ...newLeadForm, address: e.target.value })}
-                  className="w-full p-2.5 border border-slate-300 rounded-lg"
-                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsNewLeadModalOpen(false);
+                    setOnboardedResult(null);
+                    setNewLeadForm({ shopName: "", ownerName: "", phone: "", address: "", city: "Lucknow", pincode: "226001", latitude: 26.8520, longitude: 80.9510 });
+                  }}
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition"
+                >
+                  Done & Return to CRM
+                </button>
               </div>
+            ) : (
+              <form onSubmit={handleCreateLead} className="space-y-3 text-xs">
+                {onboardError && (
+                  <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs flex items-center gap-2">
+                    <ShieldAlert className="w-4 h-4 shrink-0 text-rose-600" />
+                    <span>{onboardError}</span>
+                  </div>
+                )}
 
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition mt-2"
-              >
-                Save & Add to CRM Pipeline
-              </button>
-            </form>
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Shop / Business Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Laxmi Provision Store"
+                    value={newLeadForm.shopName}
+                    onChange={(e) => setNewLeadForm({ ...newLeadForm, shopName: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Proprietor / Owner Name *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Shiv Kumar"
+                    value={newLeadForm.ownerName}
+                    onChange={(e) => setNewLeadForm({ ...newLeadForm, ownerName: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Mobile / WhatsApp Number *</label>
+                  <input
+                    type="tel"
+                    required
+                    maxLength={10}
+                    placeholder="10-digit mobile number"
+                    value={newLeadForm.phone}
+                    onChange={(e) => setNewLeadForm({ ...newLeadForm, phone: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Store Address</label>
+                  <input
+                    type="text"
+                    placeholder="Shop #, Street, Market"
+                    value={newLeadForm.address}
+                    onChange={(e) => setNewLeadForm({ ...newLeadForm, address: e.target.value })}
+                    className="w-full p-2.5 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
+                {/* Geofence Detection Button */}
+                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-800 text-[11px] flex items-center gap-1">
+                      <MapPin className="w-3.5 h-3.5 text-rose-500" /> GPS Lock (&lt;15m Exclusivity)
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">
+                      {newLeadForm.latitude}, {newLeadForm.longitude}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleDetectGpsForOnboard}
+                    disabled={detectingGps}
+                    className="px-2.5 py-1.5 bg-white border border-slate-300 text-indigo-600 font-bold rounded-lg text-[11px] flex items-center gap-1 shadow-sm transition"
+                  >
+                    <Navigation className="w-3 h-3" />
+                    {detectingGps ? "Detecting..." : "Detect GPS"}
+                  </button>
+                </div>
+
+                <button
+                  type="submit"
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg transition mt-2 flex items-center justify-center gap-2"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  Onboard Store & Provision Credentials
+                </button>
+              </form>
+            )}
           </div>
         </div>
       )}

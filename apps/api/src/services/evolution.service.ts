@@ -141,6 +141,89 @@ export class EvolutionService {
     ];
     await this.sendWhatsAppText(params.customerPhone, lines.join("\n"));
   }
+
+  async sendKycApprovalNotification(params: {
+    phone: string;
+    entityName: string;
+    ownerName?: string;
+    loginId: string;
+    password: string;
+    portalUrl?: string;
+  }): Promise<void> {
+    const portalUrl = params.portalUrl || "https://b2b.anagataitsolutions.in/login";
+    const lines = [
+      `🎉 *KYC Approved! Welcome to B2B Aggregator*`,
+      `*Entity / Shop:* ${params.entityName}`,
+      params.ownerName ? `*Owner:* ${params.ownerName}` : ``,
+      `\nYour account is now ACTIVE. You can now unlock B2B wholesale prices, volume slabs, and credit terms.`,
+      `\n🔑 *Your Login Credentials:*`,
+      `*Login ID:* ${params.loginId}`,
+      `*Temporary Password:* ${params.password}`,
+      `*Login Portal:* ${portalUrl}`,
+      `\n_Please log in and update your password._`
+    ].filter(Boolean);
+    await this.sendWhatsAppText(params.phone, lines.join("\n"));
+  }
+
+  async sendKycRejectionNotification(params: {
+    phone: string;
+    entityName: string;
+    reason?: string;
+  }): Promise<void> {
+    const lines = [
+      `⚠️ *KYC Review Update - Action Required*`,
+      `*Entity / Shop:* ${params.entityName}`,
+      `\nYour KYC registration could not be approved at this time.`,
+      params.reason ? `*Reason:* ${params.reason}` : `*Reason:* Document verification failed or details mismatched.`,
+      `\nPlease re-verify your documents and resubmit through the portal or contact your field sales representative.`,
+      `\n_Powered by Hyperlocal B2B Sales Aggregator_`
+    ];
+    await this.sendWhatsAppText(params.phone, lines.join("\n"));
+  }
+
+  async sendOnboardingWelcomeNotification(params: {
+    phone: string;
+    shopName: string;
+    ownerName: string;
+    agentName?: string;
+    loginId: string;
+    password: string;
+    portalUrl?: string;
+  }): Promise<void> {
+    const portalUrl = params.portalUrl || "https://b2b.anagataitsolutions.in/login";
+    const lines = [
+      `🎉 *Welcome to the Hyperlocal B2B Network!*`,
+      `*Shop:* ${params.shopName}`,
+      `*Owner:* ${params.ownerName}`,
+      params.agentName ? `*Onboarded By:* ${params.agentName}` : `*Assisted Onboarding Verified*`,
+      `\nYour store has been verified and active wholesale ordering is now available.`,
+      `\n🔑 *Your Portal Login Credentials:*`,
+      `*Login ID:* ${params.loginId}`,
+      `*Password:* ${params.password}`,
+      `*Direct Login:* ${portalUrl}`,
+      `\n_Save this message for your records._`
+    ];
+    await this.sendWhatsAppText(params.phone, lines.join("\n"));
+  }
+
+  async sendOrderFallbackRerouteNotification(params: {
+    retailerPhone: string;
+    retailerShopName: string;
+    orderNumber: string;
+    originalSellerName: string;
+    fallbackSellerName: string;
+    newTotalAmount?: number;
+  }): Promise<void> {
+    const lines = [
+      `🔄 *Order Re-routed to Secondary Distributor*`,
+      `*Shop:* ${params.retailerShopName}`,
+      `*Order #:* ${params.orderNumber}`,
+      `\nDue to fulfillment SLA timeout with *${params.originalSellerName}*, your order has been automatically transferred to *${params.fallbackSellerName}* to ensure zero delivery disruption.`,
+      params.newTotalAmount ? `*Updated Total:* ₹${params.newTotalAmount.toLocaleString("en-IN")}` : ``,
+      `\nYour order is being prepared for immediate dispatch.`
+    ].filter(Boolean);
+    await this.sendWhatsAppText(params.retailerPhone, lines.join("\n"));
+  }
 }
 
 export const evolutionService = new EvolutionService();

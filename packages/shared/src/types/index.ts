@@ -2,6 +2,7 @@ import {
   UserRole,
   UserStatus,
   KycStatus,
+  StockReservationStatus,
   KycDocumentType,
   BeatDay,
   VisitDisposition,
@@ -37,6 +38,8 @@ export interface User {
   email?: string;
   role: UserRole;
   status: UserStatus;
+  loginId?: string;
+  passwordHash?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -54,6 +57,10 @@ export interface Organization {
   monthlySubscriptionFee: number;
   kycStatus: KycStatus;
   kycDocUrl?: string;
+  rejectionReason?: string;
+  latitude?: number;
+  longitude?: number;
+  warehousePhotoUrl?: string;
   logoUrl?: string;
   bannerUrl?: string;
   categories?: string[];
@@ -84,6 +91,7 @@ export interface RetailerProfile {
   pincode: string;
   kycStatus: KycStatus;
   rejectionReason?: string;
+  assignedAgentId?: string;
   // CRM Enhancements
   leadStage?: LeadStage;
   creditLimit?: number;
@@ -915,6 +923,146 @@ export interface CohortRetentionRecord {
   m3RetentionPct: number;
   m6RetentionPct: number;
   m12RetentionPct: number;
+}
+
+export interface MasterSku {
+  id: string;
+  name: string;
+  brand: string;
+  category: string;
+  barcode?: string;
+  hsnCode?: string;
+  gstRatePct: number;
+  mrp: number;
+  unitTitle: string;
+  unitMultiplier: number;
+  imageUrl?: string;
+  createdAt: string;
+}
+
+export interface SellerSkuListing {
+  id: string;
+  masterSkuId: string;
+  organizationId: string;
+  sellerSkuCode: string;
+  wholesalePrice: number;
+  landedCost: number;
+  minimumOrderQuantity: number;
+  stockQuantity: number;
+  reservedStock: number;
+  fulfillmentSlaHours: number;
+  reliabilityScore: number;
+  isActive: boolean;
+  pricingSlabs?: PricingSlab[];
+  createdAt: string;
+}
+
+export interface StockReservation {
+  id: string;
+  orderId?: string;
+  subOrderId?: string;
+  sellerSkuListingId: string;
+  quantity: number;
+  status: StockReservationStatus;
+  lockedAt: string;
+  expiresAt: string;
+  releasedAt?: string;
+  fallbackListingId?: string;
+}
+
+export interface TerritoryTransfer {
+  id: string;
+  retailerId: string;
+  sourceAgentId?: string;
+  targetAgentId?: string;
+  transferredBy?: string;
+  reason?: string;
+  createdAt: string;
+}
+
+export interface BuyBoxCandidate {
+  listingId: string;
+  sellerId: string;
+  sellerName: string;
+  price: number;
+  landedCost: number;
+  proximityKm: number;
+  reliabilityScore: number;
+  slaScore: number;
+  totalScore: number;
+  availableStock: number;
+  minimumOrderQuantity: number;
+}
+
+export interface BuyBoxResult {
+  masterSku: MasterSku;
+  buyBoxWinner: BuyBoxCandidate | null;
+  alternateSellers: BuyBoxCandidate[];
+}
+
+export interface AppVersionResponse {
+  version: string;
+  buildHash: string;
+  timestamp: string;
+  environment?: string;
+  apkDownloadUrl: string;
+  latestApkVersion?: string;
+  minWebVersion?: string;
+  forceRefresh?: boolean;
+  releaseNotes?: string;
+}
+
+export interface RetailerSignupInput {
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  whatsappNumber?: string;
+  address: string;
+  city?: string;
+  pincode?: string;
+  latitude: number;
+  longitude: number;
+  documentType?: KycDocumentType;
+  documentNumber?: string;
+  gstin?: string;
+  panOrUdyam?: string;
+  kycDocUrl?: string;
+  shopPhotoUrl?: string;
+}
+
+export interface SellerSignupInput {
+  businessName: string;
+  tradeName?: string;
+  ownerName: string;
+  contactPhone: string;
+  whatsappNumber?: string;
+  gstin: string;
+  pan?: string;
+  address: string;
+  latitude?: number;
+  longitude?: number;
+  minimumOrderValue?: number;
+  subscriptionTier?: SubscriptionTier;
+  kycDocUrl?: string;
+  warehousePhotoUrl?: string;
+}
+
+export interface AgentOnboardingInput {
+  type?: 'RETAILER' | 'SELLER';
+  agentId?: string;
+  shopName: string;
+  ownerName: string;
+  phone: string;
+  whatsappNumber?: string;
+  address: string;
+  city?: string;
+  pincode?: string;
+  latitude: number;
+  longitude: number;
+  documentType?: KycDocumentType;
+  beatId?: string;
+  kycDocUrl?: string;
+  shopPhotoUrl?: string;
 }
 
 

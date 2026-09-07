@@ -115,3 +115,69 @@ export const VerifyDeliveryOtpSchema = z.object({
   deliveryBoyName: z.string().optional(),
   deliveryBoyPhone: z.string().optional()
 });
+
+export const RetailerSignupSchema = z.object({
+  shopName: z.string().min(2, 'Shop name required'),
+  ownerName: z.string().min(2, 'Owner name required'),
+  phone: z.string().min(10, 'Valid 10-digit mobile required').max(15),
+  whatsappNumber: z.string().min(10).max(15).optional(),
+  address: z.string().min(5, 'Physical address required'),
+  city: z.string().default('Lucknow'),
+  pincode: z.string().regex(/^[1-9][0-9]{5}$/, 'Invalid 6-digit Indian PIN code').default('226001'),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  documentType: z.nativeEnum(KycDocumentType).default(KycDocumentType.GSTIN),
+  documentNumber: z.string().optional(),
+  panOrUdyam: z.string().optional(),
+  gstin: z.string().optional(),
+  kycDocUrl: z.string().url().optional(),
+  shopPhotoUrl: z.string().url().optional()
+});
+
+export const SellerSignupSchema = z.object({
+  businessName: z.string().min(2, 'Business name required'),
+  tradeName: z.string().optional(),
+  ownerName: z.string().min(2, 'Owner name required'),
+  contactPhone: z.string().min(10, 'Valid contact phone required').max(15),
+  whatsappNumber: z.string().min(10).max(15).optional(),
+  gstin: z.string().regex(/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/, 'Invalid Indian GSTIN format'),
+  pan: z.string().optional(),
+  address: z.string().min(5, 'Physical warehouse address required'),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
+  minimumOrderValue: z.number().min(0).default(1000),
+  subscriptionTier: z.nativeEnum(SubscriptionTier).default(SubscriptionTier.STARTER_BEAT),
+  kycDocUrl: z.string().url().optional(),
+  warehousePhotoUrl: z.string().url().optional()
+});
+
+export const AgentOnboardingSchema = z.object({
+  type: z.enum(['RETAILER', 'SELLER']).default('RETAILER'),
+  agentId: z.string().optional(),
+  shopName: z.string().min(2, 'Shop name required'),
+  ownerName: z.string().min(2, 'Owner name required'),
+  phone: z.string().min(10, 'Valid 10-digit mobile required').max(15),
+  whatsappNumber: z.string().min(10).max(15).optional(),
+  address: z.string().min(5, 'Physical address required'),
+  city: z.string().default('Lucknow'),
+  pincode: z.string().regex(/^[1-9][0-9]{5}$/, 'Invalid 6-digit Indian PIN code').default('226001'),
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180),
+  documentType: z.nativeEnum(KycDocumentType).default(KycDocumentType.SHOP_ESTABLISHMENT_LICENSE),
+  beatId: z.string().optional(),
+  kycDocUrl: z.string().url().optional(),
+  shopPhotoUrl: z.string().url().optional()
+});
+
+export const TerritoryTransferSchema = z.object({
+  storeId: z.string().min(1, 'Store ID required'),
+  fromAgentId: z.string().optional(),
+  toAgentId: z.string().min(1, 'Target agent ID required'),
+  reason: z.string().optional()
+});
+
+export const AutoBuildBeatSchema = z.object({
+  agentId: z.string().min(1, 'Agent ID required'),
+  storeIds: z.array(z.string()).optional(),
+  clusterSize: z.number().int().min(1).max(50).default(20)
+});

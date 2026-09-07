@@ -26,7 +26,8 @@ import {
   Boxes,
   BookOpen,
   Trophy,
-  FileSpreadsheet
+  FileSpreadsheet,
+  UserPlus
 } from "lucide-react";
 import SavingsCalculator from "../components/roi/SavingsCalculator";
 import KycVerificationModal from "../components/kyc/KycVerificationModal";
@@ -45,12 +46,19 @@ import RetailerSmartTools from "../components/retailer/RetailerSmartTools";
 import SfaLeaderboardAndAudio from "../components/sfa/SfaLeaderboardAndAudio";
 import RetailPosCheckoutDesk from "../components/pos/RetailPosCheckoutDesk";
 import SuperAdminAnalyticsDashboard from "../components/admin/SuperAdminAnalyticsDashboard";
+import PublicSignupModal from "../components/auth/PublicSignupModal";
+import AppUpdateBanner from "../components/common/AppUpdateBanner";
+import ErpUniversalColumnMapper from "../components/seller/ErpUniversalColumnMapper";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "https://api-b2b.anagataitsolutions.in";
 
 export default function Home() {
   const [activeRole, setActiveRole] = useState<"SELLER" | "ADMIN" | "RETAILER" | "AGENT">("RETAILER");
   const [loading, setLoading] = useState(false);
+
+  // Self-Registration Modal
+  const [isSignupModalOpen, setIsSignupModalOpen] = useState(false);
+  const [signupInitialRole, setSignupInitialRole] = useState<"RETAILER" | "SELLER">("RETAILER");
 
   // Sub-tabs for roles
   const [sellerTab, setSellerTab] = useState<"ORDERS" | "PRODUCTS" | "CREDIT" | "PACKING" | "LOGISTICS" | "ERP" | "ROI">("ORDERS");
@@ -229,6 +237,9 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col font-sans">
+      {/* In-App Automatic Update Banner */}
+      <AppUpdateBanner apiBase={API_BASE} />
+
       {/* Top Header */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -251,52 +262,66 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Role Switcher */}
-          <div className="bg-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-semibold">
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Self-Service Registration Button */}
             <button
-              onClick={() => setActiveRole("RETAILER")}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeRole === "RETAILER"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white"
-              }`}
+              onClick={() => {
+                setSignupInitialRole("RETAILER");
+                setIsSignupModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 shadow-sm transition border border-emerald-500"
             >
-              <ShoppingBag className="w-3.5 h-3.5" />
-              Kirana Retail POS & B2B
+              <UserPlus className="w-3.5 h-3.5" />
+              <span>Self-Register (Kirana / Seller)</span>
             </button>
-            <button
-              onClick={() => setActiveRole("AGENT")}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeRole === "AGENT"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white"
-              }`}
-            >
-              <MapPin className="w-3.5 h-3.5" />
-              Field Agent CRM
-            </button>
-            <button
-              onClick={() => setActiveRole("SELLER")}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeRole === "SELLER"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white"
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              Wholesaler / Brand
-            </button>
-            <button
-              onClick={() => setActiveRole("ADMIN")}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
-                activeRole === "ADMIN"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-300 hover:text-white"
-              }`}
-            >
-              <Shield className="w-3.5 h-3.5" />
-              Super Admin HQ
-            </button>
+
+            {/* Role Switcher */}
+            <div className="bg-slate-800 p-1 rounded-xl flex flex-wrap gap-1 text-xs font-semibold">
+              <button
+                onClick={() => setActiveRole("RETAILER")}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  activeRole === "RETAILER"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-300 hover:text-white"
+                }`}
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                Kirana Retail POS & B2B
+              </button>
+              <button
+                onClick={() => setActiveRole("AGENT")}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  activeRole === "AGENT"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-300 hover:text-white"
+                }`}
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                Field Agent CRM
+              </button>
+              <button
+                onClick={() => setActiveRole("SELLER")}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  activeRole === "SELLER"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-300 hover:text-white"
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                Wholesaler / Brand
+              </button>
+              <button
+                onClick={() => setActiveRole("ADMIN")}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1.5 ${
+                  activeRole === "ADMIN"
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "text-slate-300 hover:text-white"
+                }`}
+              >
+                <Shield className="w-3.5 h-3.5" />
+                Super Admin HQ
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -515,6 +540,8 @@ export default function Home() {
 
                         {prod.skus.map((sku: any) => {
                           const currentQty = cart[sku.id] || 0;
+                          const profitRs = Math.max(0, (sku.mrp || 0) - (sku.wholesalePrice || 0));
+                          const marginPct = sku.mrp > 0 ? Math.round((profitRs / sku.mrp) * 100) : 0;
                           return (
                             <div key={sku.id} className="pt-3 border-t border-slate-100 space-y-2">
                               <div className="flex justify-between items-start">
@@ -529,7 +556,20 @@ export default function Home() {
                                       ₹{sku.mrp}
                                     </span>
                                   </div>
+                                  <div className="text-[10px] font-black text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 mt-0.5">
+                                    <Percent className="w-2.5 h-2.5 text-emerald-600" />
+                                    Net Margin: ₹{profitRs} ({marginPct}%)
+                                  </div>
                                 </div>
+                              </div>
+
+                              {/* Sell-Through Velocity Insight */}
+                              <div className="text-[10px] bg-slate-50 border border-slate-200 px-2 py-1 rounded-lg flex items-center justify-between text-slate-600">
+                                <span className="flex items-center gap-1 font-medium">
+                                  <Sparkles className="w-3 h-3 text-indigo-500" />
+                                  18-day average POS liquidation velocity
+                                </span>
+                                <span className="font-bold text-indigo-600">Recommended: 1-2 cartons</span>
                               </div>
 
                               {/* Volume Pricing Slab Pills */}
@@ -608,20 +648,60 @@ export default function Home() {
                     </span>
                   </div>
 
-                  <div className="divide-y divide-slate-100 text-xs max-h-56 overflow-y-auto">
-                    {Object.entries(cart).filter(([_, q]) => q > 0).length === 0 ? (
-                      <div className="py-6 text-center text-slate-400">Cart is empty. Select items to order.</div>
-                    ) : (
-                      Object.entries(cart)
-                        .filter(([_, q]) => q > 0)
-                        .map(([skuId, qty]) => (
-                          <div key={skuId} className="py-2 flex justify-between items-center">
-                            <span className="font-medium text-slate-700">SKU {skuId.slice(0, 16)}... (x{qty})</span>
-                            <span className="font-bold text-slate-900">Added</span>
+                  {(() => {
+                    let totalWholesale = 0;
+                    let totalMrp = 0;
+                    Object.entries(cart).forEach(([skuId, qty]) => {
+                      if (qty > 0) {
+                        const allSkus = catalog.flatMap((c) => c.skus || []);
+                        const foundSku = allSkus.find((s: any) => s.id === skuId);
+                        if (foundSku) {
+                          totalWholesale += (foundSku.wholesalePrice || 0) * qty;
+                          totalMrp += (foundSku.mrp || 0) * qty;
+                        }
+                      }
+                    });
+                    const projectedProfit = Math.max(0, totalMrp - totalWholesale);
+                    const profitMarginPct = totalMrp > 0 ? Math.round((projectedProfit / totalMrp) * 100) : 0;
+
+                    return (
+                      <>
+                        <div className="divide-y divide-slate-100 text-xs max-h-56 overflow-y-auto">
+                          {Object.entries(cart).filter(([_, q]) => q > 0).length === 0 ? (
+                            <div className="py-6 text-center text-slate-400">Cart is empty. Select items to order.</div>
+                          ) : (
+                            Object.entries(cart)
+                              .filter(([_, q]) => q > 0)
+                              .map(([skuId, qty]) => (
+                                <div key={skuId} className="py-2 flex justify-between items-center">
+                                  <span className="font-medium text-slate-700">SKU {skuId.slice(0, 16)}... (x{qty})</span>
+                                  <span className="font-bold text-slate-900">Added</span>
+                                </div>
+                              ))
+                          )}
+                        </div>
+
+                        {/* Cart Profitability Summary Bar */}
+                        {projectedProfit > 0 && (
+                          <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl space-y-1">
+                            <div className="flex justify-between items-center text-xs">
+                              <span className="text-emerald-800 font-bold flex items-center gap-1">
+                                <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+                                Projected Kirana Resale Profit:
+                              </span>
+                              <span className="font-black text-emerald-700 text-sm">
+                                ₹{projectedProfit.toLocaleString("en-IN")}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-[11px] text-emerald-600">
+                              <span>Cart Wholesale Buy: ₹{totalWholesale.toLocaleString("en-IN")}</span>
+                              <span className="font-bold">+{profitMarginPct}% Profit Margin</span>
+                            </div>
                           </div>
-                        ))
-                    )}
-                  </div>
+                        )}
+                      </>
+                    );
+                  })()}
 
                   <button
                     onClick={() => setIsCheckoutModalOpen(true)}
@@ -816,7 +896,10 @@ export default function Home() {
             )}
 
             {sellerTab === "ERP" && (
-              <TallyMargExportDesk apiBase={API_BASE} organizationId="org_anagata_fmcg" />
+              <div className="space-y-6">
+                <ErpUniversalColumnMapper apiBase={API_BASE} organizationId="org_anagata_fmcg" />
+                <TallyMargExportDesk apiBase={API_BASE} organizationId="org_anagata_fmcg" />
+              </div>
             )}
 
             {sellerTab === "ROI" && (
@@ -1048,6 +1131,13 @@ export default function Home() {
         subOrderId={selectedEWaySubOrder || ""}
         isOpen={isEWayModalOpen}
         onClose={() => setIsEWayModalOpen(false)}
+      />
+
+      <PublicSignupModal
+        isOpen={isSignupModalOpen}
+        onClose={() => setIsSignupModalOpen(false)}
+        apiBase={API_BASE}
+        initialRole={signupInitialRole}
       />
     </div>
   );

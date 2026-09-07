@@ -8,11 +8,15 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Drop existing tables in reverse dependency order
 DROP TABLE IF EXISTS visits CASCADE;
+DROP TABLE IF EXISTS territory_transfers CASCADE;
+DROP TABLE IF EXISTS stock_reservations CASCADE;
 DROP TABLE IF EXISTS order_items CASCADE;
 DROP TABLE IF EXISTS sub_orders CASCADE;
 DROP TABLE IF EXISTS orders CASCADE;
 DROP TABLE IF EXISTS beat_schedules CASCADE;
 DROP TABLE IF EXISTS beats CASCADE;
+DROP TABLE IF EXISTS seller_sku_listings CASCADE;
+DROP TABLE IF EXISTS master_skus CASCADE;
 DROP TABLE IF EXISTS product_skus CASCADE;
 DROP TABLE IF EXISTS products CASCADE;
 DROP TABLE IF EXISTS retailers CASCADE;
@@ -26,8 +30,10 @@ CREATE TABLE users (
     id VARCHAR(64) PRIMARY KEY,
     phone VARCHAR(20) UNIQUE NOT NULL,
     name VARCHAR(255) NOT NULL,
-    role VARCHAR(50) NOT NULL CHECK (role IN ('SUPER_ADMIN', 'SELLER_ADMIN', 'SALES_AGENT', 'RETAILER')),
-    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PENDING_KYC', 'SUSPENDED')),
+    role VARCHAR(50) NOT NULL CHECK (role IN ('SUPER_ADMIN', 'SELLER_ADMIN', 'SALES_AGENT', 'RETAILER', 'SUPPLY_BD_AGENT')),
+    status VARCHAR(50) NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'PENDING_KYC', 'PENDING_APPROVAL', 'SUSPENDED')),
+    login_id VARCHAR(64),
+    password_hash VARCHAR(255),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -45,8 +51,12 @@ CREATE TABLE organizations (
     minimum_order_value NUMERIC(12, 2) NOT NULL DEFAULT 0.00,
     subscription_tier VARCHAR(50) NOT NULL DEFAULT 'STARTER_BEAT' CHECK (subscription_tier IN ('FREE_LISTING', 'STARTER_BEAT', 'GROWTH_BEAT', 'ENTERPRISE_BEAT')),
     monthly_subscription_fee NUMERIC(12, 2) NOT NULL DEFAULT 6000.00,
-    kyc_status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED' CHECK (kyc_status IN ('PENDING', 'VERIFIED', 'REJECTED')),
+    kyc_status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED' CHECK (kyc_status IN ('PENDING', 'PENDING_APPROVAL', 'VERIFIED', 'REJECTED')),
     kyc_doc_url TEXT,
+    rejection_reason TEXT,
+    latitude NUMERIC(10, 6),
+    longitude NUMERIC(10, 6),
+    warehouse_photo_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -72,8 +82,10 @@ CREATE TABLE retailers (
     address TEXT NOT NULL,
     city VARCHAR(100) NOT NULL DEFAULT 'Lucknow',
     pincode VARCHAR(10) NOT NULL DEFAULT '226001',
-    kyc_status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED' CHECK (kyc_status IN ('PENDING', 'VERIFIED', 'REJECTED')),
+    kyc_status VARCHAR(50) NOT NULL DEFAULT 'VERIFIED' CHECK (kyc_status IN ('PENDING', 'PENDING_APPROVAL', 'VERIFIED', 'REJECTED')),
     rejection_reason TEXT,
+    assigned_agent_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    lead_stage VARCHAR(50) DEFAULT 'PROSPECT',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -206,6 +218,121 @@ CREATE TABLE visits (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- -----------------------------------------------------------------------------
+-- 12. Master SKUs Table (Multi-Seller Common Catalog)
+-- -----------------------------------------------------------------------------
+CREATE TABLE master_skus (
+    id VARCHAR(64) PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    brand VARCHAR(100) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    barcode VARCHAR(50) UNIQUE,
+    hsn_code VARCHAR(20),
+    gst_rate_pct NUMERIC(5, 2) NOT NULL DEFAULT 18.00,
+    mrp NUMERIC(10, 2) NOT NULL,
+    unit_title VARCHAR(100) NOT NULL,
+    unit_multiplier INTEGER NOT NULL DEFAULT 1,
+    image_url TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------------------------------------------
+-- 13. Seller SKU Listings Table (Competing Multi-Seller Offers)
+-- -----------------------------------------------------------------------------
+CREATE TABLE seller_sku_listings (
+    id VARCHAR(64) PRIMARY KEY,
+    master_sku_id VARCHAR(64) NOT NULL REFERENCES master_skus(id) ON DELETE CASCADE,
+    organization_id VARCHAR(64) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    seller_sku_code VARCHAR(100) NOT NULL,
+    wholesale_price NUMERIC(10, 2) NOT NULL,
+    landed_cost NUMERIC(10, 2) NOT NULL,
+    minimum_order_quantity INTEGER NOT NULL DEFAULT 1,
+    stock_quantity INTEGER NOT NULL DEFAULT 100,
+    reserved_stock INTEGER NOT NULL DEFAULT 0,
+    fulfillment_sla_hours INTEGER NOT NULL DEFAULT 24,
+    reliability_score NUMERIC(3, 2) NOT NULL DEFAULT 4.80 CHECK (reliability_score >= 1.00 AND reliability_score <= 5.00),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    pricing_slabs JSONB,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT unique_org_master_sku UNIQUE (master_sku_id, organization_id)
+);
+
+-- -----------------------------------------------------------------------------
+-- 14. Stock Reservations Table (15-min TTL Checkout Locks)
+-- -----------------------------------------------------------------------------
+CREATE TABLE stock_reservations (
+    id VARCHAR(64) PRIMARY KEY,
+    order_id VARCHAR(64) REFERENCES orders(id) ON DELETE CASCADE,
+    sub_order_id VARCHAR(64) REFERENCES sub_orders(id) ON DELETE CASCADE,
+    seller_sku_listing_id VARCHAR(64) NOT NULL REFERENCES seller_sku_listings(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'RESERVED' CHECK (status IN ('RESERVED', 'COMMITTED', 'RELEASED', 'FALLBACK_REROUTED')),
+    locked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    released_at TIMESTAMP WITH TIME ZONE,
+    fallback_listing_id VARCHAR(64) REFERENCES seller_sku_listings(id)
+);
+
+-- -----------------------------------------------------------------------------
+-- 15. Territory Transfers Table (Store Exclusivity & Reassignment Audit)
+-- -----------------------------------------------------------------------------
+CREATE TABLE territory_transfers (
+    id VARCHAR(64) PRIMARY KEY,
+    retailer_id VARCHAR(64) NOT NULL REFERENCES retailers(id) ON DELETE CASCADE,
+    source_agent_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    target_agent_id VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    transferred_by VARCHAR(64) REFERENCES users(id) ON DELETE SET NULL,
+    reason TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- -----------------------------------------------------------------------------
+-- 16. GPS Collision Enforcement Trigger (<15m Radius Prevention)
+-- -----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION check_retailer_gps_collision()
+RETURNS TRIGGER AS $$
+DECLARE
+  colliding_id VARCHAR(64);
+  colliding_name VARCHAR(255);
+  detected_distance NUMERIC;
+BEGIN
+  SELECT id, shop_name,
+    ROUND((6371000 * acos(
+      LEAST(1.0, GREATEST(-1.0,
+        cos(radians(NEW.latitude)) * cos(radians(latitude)) *
+        cos(radians(longitude) - radians(NEW.longitude)) +
+        sin(radians(NEW.latitude)) * sin(radians(latitude))
+      ))
+    ))::numeric, 2)
+  INTO colliding_id, colliding_name, detected_distance
+  FROM retailers
+  WHERE id <> COALESCE(NEW.id, '')
+    AND (
+      6371000 * acos(
+        LEAST(1.0, GREATEST(-1.0,
+          cos(radians(NEW.latitude)) * cos(radians(latitude)) *
+          cos(radians(longitude) - radians(NEW.longitude)) +
+          sin(radians(NEW.latitude)) * sin(radians(latitude))
+        ))
+      )
+    ) < 15.0
+  LIMIT 1;
+
+  IF colliding_name IS NOT NULL THEN
+    RAISE EXCEPTION 'GPS_COLLISION_15M: Store % is already registered within % meters (ID: %)',
+      colliding_name, detected_distance, colliding_id
+      USING ERRCODE = '23505';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_check_retailer_gps_collision ON retailers;
+CREATE TRIGGER trg_check_retailer_gps_collision
+BEFORE INSERT OR UPDATE OF latitude, longitude ON retailers
+FOR EACH ROW EXECUTE FUNCTION check_retailer_gps_collision();
+
 -- =============================================================================
 -- SEED DATA: FMCG Ecosystem (Lucknow Territory)
 -- =============================================================================
@@ -269,6 +396,21 @@ INSERT INTO order_items (id, sub_order_id, product_sku_id, product_name, sku_cod
 INSERT INTO visits (id, agent_id, retailer_id, beat_id, check_in_time, check_out_time, check_in_lat, check_in_lng, is_within_geofence, distance_meters, disposition, notes, master_order_id) VALUES
 ('vis_sample_01', 'usr_agent_1', 'ret_gupta_kirana', 'beat_hazratganj_mon', CURRENT_TIMESTAMP - INTERVAL '130 minutes', CURRENT_TIMESTAMP - INTERVAL '110 minutes', 26.846900, 80.946200, TRUE, 22.20, 'ORDER_BOOKED', 'Order booked for Parle-G & Tata Tea. Store requested priority delivery before 2 PM.', 'ord_sample_01');
 
+-- 12. Master SKUs Seed
+INSERT INTO master_skus (id, name, brand, category, barcode, hsn_code, gst_rate_pct, mrp, unit_title, unit_multiplier, image_url) VALUES
+('msku_parle_g_80g', 'Parle-G Glucose Biscuits (80g)', 'Parle', 'Biscuits & Confectionery', '8901719101014', '19053100', 18.00, 720.00, 'Master Carton (72 packets)', 72, 'https://images.unsplash.com/photo-1558961363-fa8fdf82db35?w=500'),
+('msku_tata_tea_gold', 'Tata Tea Gold (250g)', 'Tata', 'Tea & Beverages', '8901052003112', '09024010', 5.00, 3200.00, 'Wholesale Bundle (20 packs)', 20, 'https://images.unsplash.com/photo-1576092768241-dec231879fc3?w=500'),
+('msku_tata_salt_1kg', 'Tata Salt Vacuum Evaporated (1kg)', 'Tata', 'Staples & Grains', '8901052000012', '25010010', 5.00, 700.00, 'Wholesale Bag (25 packs)', 25, 'https://images.unsplash.com/photo-1588681664899-f142ff2dc9b1?w=500');
+
+-- 13. Seller SKU Listings Seed (Multi-Seller Competition)
+INSERT INTO seller_sku_listings (id, master_sku_id, organization_id, seller_sku_code, wholesale_price, landed_cost, minimum_order_quantity, stock_quantity, reserved_stock, fulfillment_sla_hours, reliability_score, is_active) VALUES
+('list_anagata_parle', 'msku_parle_g_80g', 'org_anagata_fmcg', 'ANA-PARLE-CTN', 580.00, 595.00, 2, 240, 0, 24, 4.90, TRUE),
+('list_awadh_parle', 'msku_parle_g_80g', 'org_awadh_beverages', 'AWD-PARLE-CTN', 590.00, 610.00, 1, 150, 0, 36, 4.70, TRUE),
+('list_anagata_tata_tea', 'msku_tata_tea_gold', 'org_anagata_fmcg', 'ANA-TATA-BX', 2650.00, 2700.00, 1, 110, 0, 24, 4.90, TRUE),
+('list_awadh_tata_tea', 'msku_tata_tea_gold', 'org_awadh_beverages', 'AWD-TATA-BX', 2680.00, 2740.00, 1, 80, 0, 48, 4.60, TRUE),
+('list_anagata_tata_salt', 'msku_tata_salt_1kg', 'org_anagata_fmcg', 'ANA-SALT-BAG', 550.00, 565.00, 2, 300, 0, 24, 4.90, TRUE),
+('list_awadh_tata_salt', 'msku_tata_salt_1kg', 'org_awadh_beverages', 'AWD-SALT-BAG', 560.00, 580.00, 1, 200, 0, 24, 4.75, TRUE);
+
 -- Indexes for High Performance Querying
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
 CREATE INDEX IF NOT EXISTS idx_retailers_phone ON retailers(phone);
@@ -280,3 +422,8 @@ CREATE INDEX IF NOT EXISTS idx_sub_orders_org_id ON sub_orders(organization_id);
 CREATE INDEX IF NOT EXISTS idx_order_items_sub_order_id ON order_items(sub_order_id);
 CREATE INDEX IF NOT EXISTS idx_visits_agent_id ON visits(agent_id);
 CREATE INDEX IF NOT EXISTS idx_visits_retailer_id ON visits(retailer_id);
+CREATE INDEX IF NOT EXISTS idx_master_skus_barcode ON master_skus(barcode);
+CREATE INDEX IF NOT EXISTS idx_seller_listings_master_sku ON seller_sku_listings(master_sku_id);
+CREATE INDEX IF NOT EXISTS idx_seller_listings_org ON seller_sku_listings(organization_id);
+CREATE INDEX IF NOT EXISTS idx_stock_reservations_listing ON stock_reservations(seller_sku_listing_id);
+CREATE INDEX IF NOT EXISTS idx_territory_transfers_retailer ON territory_transfers(retailer_id);
