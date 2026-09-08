@@ -63,9 +63,9 @@ Multi-tier monorepo architecture connecting Kirana Retailers, FMCG Distributors/
 | # | Name | Scope | Dependencies | Status |
 |---|---|---|---|---|
 | M1 | Backend API CRUD Hardening & Schemas | Fastify routes (`GET/PUT/DELETE /api/seller/products/:id`, `GET/PATCH /api/orders/:id`, `GET/PUT /api/retailers/:id`, `GET/PUT /api/users/:id`, `GET /api/pos/bills/:id`), `InMemoryDataStore`, `docker/init.sql`, and `tests/crud-expansion.test.js` | none | DONE |
-| M2 | Web Universal View & Edit CRUD, Orders & UX Polish | `SlideOverDrawer.tsx`, `SellerProductStudio.tsx` (View/Edit/Archive), `OrderDetailsDrawer.tsx`, `AgentCrmDashboard.tsx` (360/Edit), User desks (View/Edit), `RetailPosCheckoutDesk.tsx` (Bill History Drawer/Reprint), Kirana Retailer My Orders Tab & live polling, Design system polish | M1 | IN_PROGRESS |
-| M3 | React Native Mobile Parity & Standalone Release APK | `ProductDetailModal.tsx` with margin calculator, `RetailerOrdersScreen.tsx` with Delivery OTP, `RetailerProfileScreen.tsx`, sub-tab navigation in `App.tsx`, Metro bundle, Gradle release APK compilation, dual deployment | M1 | PLANNED |
-| M4 | Cloud Deployment & Live Verification | Expand `scripts/verify-cloud.js` to 90 assertions, Git commit & push, Coolify redeployment on VPS, 100% test pass on `test-personas.js` and `verify-cloud.js` | M1, M2, M3 | PLANNED |
+| M2 | Web Universal View & Edit CRUD, Orders & UX Polish | `SlideOverDrawer.tsx`, `SellerProductStudio.tsx` (View/Edit/Archive), `OrderDetailsDrawer.tsx`, `AgentCrmDashboard.tsx` (360/Edit), User desks (View/Edit), `RetailPosCheckoutDesk.tsx` (Bill History Drawer/Reprint), Kirana Retailer My Orders Tab & live polling, Design system polish | M1 | DONE |
+| M3 | React Native Mobile Parity & Standalone Release APK | `ProductDetailModal.tsx` with margin calculator, `RetailerOrdersScreen.tsx` with Delivery OTP, `RetailerProfileScreen.tsx`, sub-tab navigation in `App.tsx`, Metro bundle, Gradle release APK compilation, dual deployment | M1 | DONE |
+| M4 | Cloud Deployment & Live Verification | Expand `scripts/verify-cloud.js` to 90 assertions, Git commit & push, Coolify redeployment on VPS, 100% test pass on `test-personas.js` and `verify-cloud.js` | M1, M2, M3 | DONE |
 
 ## Interface Contracts
 
